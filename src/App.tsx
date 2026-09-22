@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase'
 import { useAuth } from './hooks/useAuth'
 import { Layout } from './components/Layout'
 import { AuthPage } from './pages/AuthPage'
+import { AuthCallbackPage } from './pages/AuthCallbackPage'
 import { HomePage } from './pages/HomePage'
 import { SearchPage } from './pages/SearchPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -37,6 +38,9 @@ function AppContent() {
 
   return (
     <Routes>
+      {/* OAuth Callback - Always available */}
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
       {!user ? (
         <>
           <Route path="/auth" element={<AuthPage />} />
