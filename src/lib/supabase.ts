@@ -1,9 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-// For development, use import.meta.env
-// For production (Vercel), use window.__ENV__ injected by Vercel
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || (window as any).__ENV__?.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || (window as any).__ENV__?.VITE_SUPABASE_ANON_KEY
+const supabaseUrl = (window as any).__VITE_SUPABASE_URL__ || import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = (window as any).__VITE_SUPABASE_ANON_KEY__ || import.meta.env.VITE_SUPABASE_ANON_KEY
 
 console.log('Supabase URL:', supabaseUrl)
 console.log('Supabase Key:', supabaseAnonKey ? 'exists' : 'missing')
