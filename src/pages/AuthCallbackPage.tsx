@@ -1,15 +1,41 @@
-import React, { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
+
+// Read any error Google/Supabase put in the address bar. This runs as soon as
+// the app loads, before Supabase tidies the address bar.
+function readUrlError(): string | null {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const query = new URLSearchParams(window.location.search)
+  return (
+    hash.get('error_description') ||
+    query.get('error_description') ||
+    hash.get('error') ||
+    query.get('error')
+  )
+}
+
+const initialUrlError = window.location.pathname.startsWith('/auth/callback')
+  ? readUrlError()
+  : null
 
 export function AuthCallbackPage() {
-  const navigate = useNavigate()
+  const { user, loading } = useAuth()
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      navigate('/')
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [navigate])
+  if (user) {
+    return <Navigate to="/" replace />
+  }
+
+  if (!loading) {
+    return (
+      <Navigate
+        to="/auth"
+        replace
+        state={{
+          authError: initialUrlError || 'Sign-in did not finish. Please try again.'
+        }}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center">

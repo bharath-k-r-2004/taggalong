@@ -1,12 +1,7 @@
-import React from 'react'
-import { useLocation, Link } from 'react-router-dom'
+import { useLocation, Link, Outlet } from 'react-router-dom'
 import { Home, Search, MapPin, MessageSquare, User } from 'lucide-react'
 
-interface LayoutProps {
-  children: React.ReactNode
-}
-
-export function Layout({ children }: LayoutProps) {
+export function Layout() {
   const location = useLocation()
 
   const isActive = (path: string) => location.pathname === path
@@ -21,9 +16,9 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className="flex flex-col h-screen bg-white">
-      {/* Main content */}
+      {/* Main content: the current page (Home, Search, Profile...) renders here */}
       <div className="flex-1 overflow-y-auto pb-20">
-        {children}
+        <Outlet />
       </div>
 
       {/* Bottom Navigation */}
