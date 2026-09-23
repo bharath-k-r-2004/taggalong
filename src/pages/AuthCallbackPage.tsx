@@ -5,12 +5,9 @@ export function AuthCallbackPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    // Supabase automatically handles the callback and sets the session
-    // Just redirect to home after a brief delay
     const timer = setTimeout(() => {
       navigate('/')
     }, 500)
-
     return () => clearTimeout(timer)
   }, [navigate])
 
