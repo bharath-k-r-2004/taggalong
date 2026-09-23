@@ -42,7 +42,7 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="md:ml-64 p-4 md:p-8 max-w-2xl">
+    <div className="mx-auto max-w-2xl p-4 md:p-8">
       {/* Header */}
       <h1 className="text-3xl font-bold text-secondary-900 mb-8">My Profile</h1>
 

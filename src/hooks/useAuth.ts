@@ -30,7 +30,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 async function loadProfile(authUser: User): Promise<AuthUser> {
   const { data: profile, error } = await supabase
     .from('users')
-    .select('*')
+    .select('id, name, course, batch, full_batch')
     .eq('id', authUser.id)
     .maybeSingle()
 

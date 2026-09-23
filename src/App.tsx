@@ -40,7 +40,7 @@ function AppContent() {
           <Route path="/" element={<HomePage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/create-ride" element={<CreateRidePage />} />
-          <Route path="/find-travellers" element={<SearchPage />} />
+          <Route path="/find-travellers" element={<Navigate to="/search" replace />} />
           <Route path="/ride/:id" element={<RideDetailsPage />} />
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/profile" element={<ProfilePage />} />

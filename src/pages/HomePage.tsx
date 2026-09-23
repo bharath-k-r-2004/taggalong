@@ -1,195 +1,132 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowRight, Car, Search } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { MapPin, Clock, Calendar, Car, Users } from 'lucide-react'
+import { RideCard } from '../components/RideCard'
+import { Ride, fetchUpcomingRides, myParticipation, seatsLeft } from '../lib/rides'
 
 export function HomePage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useState({
-    origin: 'IIM Rohtak',
-    destination: '',
-    date: '',
-    time: '',
-    timeFlexibility: 'flexible'
+  const [rides, setRides] = useState<Ride[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchUpcomingRides()
+      .then(setRides)
+      .catch(err => setError(err.message || 'Could not load rides'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const name = user?.user_metadata?.name
+  const course = user?.user_metadata?.course
+  const batch = user?.user_metadata?.batch
+
+  // My next trip: a ride I posted, or one I asked to join
+  const myNext = rides.find(r => {
+    if (r.creator_id === user?.id) return true
+    const p = myParticipation(r, user?.id)
+    return p?.status === 'accepted' || p?.status === 'requested'
   })
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setSearchParams(prev => ({
-      ...prev,
-      [name]: value
-    }))
-  }
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!searchParams.destination || !searchParams.date) {
-      alert('Please fill in all required fields')
-      return
-    }
-    navigate('/search', { state: searchParams })
-  }
+  // Rides from others that still have seats
+  const leavingSoon = rides
+    .filter(r => r.creator_id !== user?.id && seatsLeft(r) > 0 && r.id !== myNext?.id)
+    .slice(0, 4)
 
   return (
-    <div className="md:ml-64">
-      {/* Welcome Section */}
-      <div className="bg-gradient-to-br from-primary-500 to-primary-600 text-white p-6 md:p-8">
-        <h1 className="text-3xl md:text-4xl font-bold mb-2">
-          Hey {user?.user_metadata?.name || 'there'},
-        </h1>
-        <p className="text-primary-100 text-lg">Where are you going?</p>
-        
-        {user?.user_metadata?.course && (
-          <div className="mt-4 inline-block bg-white/20 px-3 py-1 rounded-full text-sm">
-            {user.user_metadata.course}
-            {user.user_metadata.batch && ` · Batch ${user.user_metadata.batch}`}
-          </div>
+    <div className="mx-auto max-w-3xl">
+      {/* Greeting */}
+      <div className="bg-gradient-to-br from-primary-600 to-primary-700 px-5 pb-16 pt-8 text-white md:rounded-b-3xl">
+        <p className="text-primary-100">Hey {name || 'there'} 👋</p>
+        <h1 className="mt-1 text-3xl font-bold">Where are you headed?</h1>
+        {course && (
+          <span className="mt-3 inline-block rounded-full bg-white/20 px-3 py-1 text-sm">
+            {course}
+            {batch && ` · Batch ${batch}`}
+          </span>
         )}
       </div>
 
-      {/* Search Form */}
-      <div className="p-4 md:p-8 max-w-4xl">
-        <form onSubmit={handleSearch} className="bg-white rounded-lg shadow-md p-6 space-y-4">
-          {/* Origin */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              <MapPin className="inline mr-2" size={16} />
-              From
-            </label>
-            <input
-              type="text"
-              name="origin"
-              value={searchParams.origin}
-              onChange={handleInputChange}
-              className="w-full px-4 py-3 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-primary-500 bg-secondary-50"
-              disabled
-            />
-          </div>
+      {/* The two main choices */}
+      <div className="-mt-10 grid grid-cols-1 gap-3 px-4 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => navigate('/search')}
+          className="group rounded-2xl border border-secondary-200 bg-white p-5 text-left shadow-md transition hover:border-primary-400 hover:shadow-lg"
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+            <Search size={26} />
+          </span>
+          <h2 className="mt-3 text-lg font-bold text-secondary-900">Find a ride</h2>
+          <p className="mt-1 text-sm text-secondary-600">
+            See every ride students have posted and join one going your way.
+          </p>
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary-600">
+            Browse rides <ArrowRight size={16} className="transition group-hover:translate-x-0.5" />
+          </span>
+        </button>
 
-          {/* Destination */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              <MapPin className="inline mr-2" size={16} />
-              To
-            </label>
-            <input
-              type="text"
-              name="destination"
-              placeholder="Enter destination"
-              value={searchParams.destination}
-              onChange={handleInputChange}
-              className="w-full px-4 py-3 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-              required
-            />
-          </div>
-
-          {/* Date and Time Row */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-secondary-700 mb-2">
-                <Calendar className="inline mr-2" size={16} />
-                Date
-              </label>
-              <input
-                type="date"
-                name="date"
-                value={searchParams.date}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-secondary-700 mb-2">
-                <Clock className="inline mr-2" size={16} />
-                Preferred time
-              </label>
-              <input
-                type="time"
-                name="time"
-                value={searchParams.time}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-          </div>
-
-          {/* Time Flexibility */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-3">
-              <Clock className="inline mr-2" size={16} />
-              Time flexibility (optional)
-            </label>
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { value: 'exact', label: 'Exact' },
-                { value: '30mins', label: '± 30 mins' },
-                { value: '1hour', label: '± 1 hour' },
-                { value: 'flexible', label: 'Flexible' }
-              ].map(option => (
-                <label
-                  key={option.value}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-                    searchParams.timeFlexibility === option.value
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="timeFlexibility"
-                    value={option.value}
-                    checked={searchParams.timeFlexibility === option.value}
-                    onChange={handleInputChange}
-                    className="hidden"
-                  />
-                  {option.label}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            className="w-full bg-primary-600 text-white py-3 rounded-lg font-semibold hover:bg-primary-700 transition-colors mt-6"
-          >
-            Find a Ride →
-          </button>
-        </form>
+        <button
+          type="button"
+          onClick={() => navigate('/create-ride')}
+          className="group rounded-2xl border border-secondary-200 bg-white p-5 text-left shadow-md transition hover:border-primary-400 hover:shadow-lg"
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary-900 text-white">
+            <Car size={26} />
+          </span>
+          <h2 className="mt-3 text-lg font-bold text-secondary-900">I have a driver</h2>
+          <p className="mt-1 text-sm text-secondary-600">
+            Booked a cab or driving yourself? Post your ride and split the fare.
+          </p>
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary-600">
+            Post a ride <ArrowRight size={16} className="transition group-hover:translate-x-0.5" />
+          </span>
+        </button>
       </div>
 
-      {/* Quick Actions */}
-      <div className="px-4 md:px-8 pb-8">
-        <p className="text-secondary-700 font-medium mb-4">OR</p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
-          {/* I have a driver */}
-          <button
-            onClick={() => navigate('/create-ride')}
-            className="bg-white border-2 border-primary-300 rounded-lg p-6 hover:shadow-md transition-shadow text-left"
-          >
-            <Car className="text-primary-600 mb-3" size={32} />
-            <h3 className="font-semibold text-secondary-900 mb-1">I have a driver</h3>
-            <p className="text-sm text-secondary-600">
-              Share your ride and find co-travellers
-            </p>
-          </button>
+      <div className="space-y-6 px-4 py-6">
+        {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-          {/* Find travellers */}
-          <button
-            onClick={() => navigate('/find-travellers')}
-            className="bg-white border-2 border-primary-300 rounded-lg p-6 hover:shadow-md transition-shadow text-left"
-          >
-            <Users className="text-primary-600 mb-3" size={32} />
-            <h3 className="font-semibold text-secondary-900 mb-1">Find Travellers</h3>
-            <p className="text-sm text-secondary-600">
-              See students going your way
-            </p>
-          </button>
-        </div>
+        {myNext && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-secondary-500">Your next trip</h3>
+            <RideCard ride={myNext} userId={user?.id} />
+          </section>
+        )}
+
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-secondary-500">Leaving soon</h3>
+            <Link to="/search" className="text-sm font-semibold text-primary-600 hover:underline">
+              See all
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+            </div>
+          ) : leavingSoon.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-secondary-300 bg-white px-4 py-8 text-center">
+              <p className="text-secondary-600">No open rides yet.</p>
+              <button
+                type="button"
+                onClick={() => navigate('/create-ride')}
+                className="mt-2 text-sm font-semibold text-primary-600 hover:underline"
+              >
+                Be the first to post one
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {leavingSoon.map(ride => (
+                <RideCard key={ride.id} ride={ride} userId={user?.id} />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   )

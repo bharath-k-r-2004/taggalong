@@ -1,220 +1,188 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useRides } from '../hooks/useRides'
-import { matchRides, MatchScore } from '../lib/matchingAlgorithm'
-import { formatCost } from '../lib/costSplitting'
-import { Star, MapPin, Clock, Users, Edit2, ChevronRight } from 'lucide-react'
+import { ArrowUpDown, CalendarDays, Plus, RefreshCw } from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
+import { LocationInput } from '../components/LocationInput'
+import { RideCard } from '../components/RideCard'
+import { Place } from '../lib/places'
+import { Ride, fetchUpcomingRides, matchRides, todayString } from '../lib/rides'
+
+interface SearchState {
+  from?: Place | null
+  to?: Place | null
+  date?: string
+}
 
 export function SearchPage() {
-  const location = useLocation()
+  const { user } = useAuth()
   const navigate = useNavigate()
-  const { rides } = useRides()
-  const [matches, setMatches] = useState<MatchScore[]>([])
-  const [filterType, setFilterType] = useState('all')
+  const initial = (useLocation().state as SearchState | null) || {}
 
-  const searchParams = location.state || {
-    origin: 'IIM Rohtak',
-    destination: 'Delhi',
-    date: '',
-    time: '',
-    timeFlexibility: 'flexible'
+  const [from, setFrom] = useState<Place | null>(initial.from || null)
+  const [to, setTo] = useState<Place | null>(initial.to || null)
+  const [date, setDate] = useState(initial.date || '')
+  const [rides, setRides] = useState<Ride[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    setError(null)
+    fetchUpcomingRides()
+      .then(setRides)
+      .catch(err => setError(err.message || 'Could not load rides'))
+      .finally(() => setLoading(false))
   }
 
-  useEffect(() => {
-    if (rides.length > 0) {
-      const allMatches = matchRides(
-        rides as any,
-        searchParams.origin,
-        searchParams.destination,
-        searchParams.date,
-        searchParams.time,
-        searchParams.timeFlexibility
-      )
-      setMatches(allMatches)
-    }
-  }, [rides, searchParams])
+  useEffect(load, [])
 
-  const getFilteredMatches = () => {
-    return matches.filter(match => {
-      if (filterType === 'driver') return match.ride.status === 'confirmed' || match.ride.status === 'open'
-      if (filterType === 'no-driver') return match.ride.status === 'looking-for-driver'
-      return true
-    })
+  const filtering = Boolean(from?.name || to?.name || date)
+  const results = useMemo(() => matchRides(rides, from, to, date), [rides, from, to, date])
+  const matches = results.filter(r => r.isMatch)
+  const others = filtering ? results.filter(r => !r.isMatch) : []
+
+  const swap = () => {
+    setFrom(to)
+    setTo(from)
   }
 
-  const filteredMatches = getFilteredMatches()
-
-  const getAvailableSeats = (ride: any) => {
-    return ride.max_seats - (ride.current_participants || 0)
-  }
-
-  const getCurrentParticipants = (ride: any) => {
-    return ride.current_participants || 0
+  const clearAll = () => {
+    setFrom(null)
+    setTo(null)
+    setDate('')
   }
 
   return (
-    <div className="md:ml-64">
-      {/* Header */}
-      <div className="bg-white border-b border-secondary-200 p-4 md:p-6 sticky top-0 z-10">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-secondary-900">Matching Rides</h1>
+    <div className="mx-auto max-w-3xl px-4 py-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-secondary-900">Find a ride</h1>
+        <button
+          type="button"
+          onClick={load}
+          className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm text-secondary-600 hover:bg-secondary-100"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Where from / where to */}
+      <div className="rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
+        <div className="relative space-y-3">
+          <LocationInput
+            label="From"
+            placeholder="Pickup: campus, station, city..."
+            value={from}
+            onChange={setFrom}
+            kind="from"
+            allowCurrentLocation
+          />
+          <LocationInput
+            label="To"
+            placeholder="Where to?"
+            value={to}
+            onChange={setTo}
+            kind="to"
+            near={from}
+          />
           <button
-            onClick={() => navigate('/')}
-            className="text-primary-600 hover:text-primary-700 flex items-center gap-1"
+            type="button"
+            onClick={swap}
+            className="absolute right-12 top-[3.35rem] z-10 rounded-full border border-secondary-200 bg-white p-1.5 text-secondary-600 shadow-sm hover:bg-secondary-50"
+            title="Swap pickup and drop"
+            aria-label="Swap pickup and drop"
           >
-            <Edit2 size={18} />
-            Edit Search
+            <ArrowUpDown size={16} />
           </button>
         </div>
 
-        {/* Search Summary */}
-        <div className="bg-primary-50 border border-primary-200 rounded-lg p-4 mb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-secondary-600">
-                <MapPin className="inline mr-1" size={14} />
-                {searchParams.origin} → {searchParams.destination}
-              </p>
-              <p className="text-sm text-secondary-600">
-                <Calendar className="inline mr-1" size={14} />
-                {searchParams.date && new Date(searchParams.date).toLocaleDateString('en-IN')} • Around{' '}
-                {searchParams.time || 'any time'}
-              </p>
-            </div>
+        <div className="mt-3 flex items-end gap-3">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-secondary-500">
+              <CalendarDays size={12} className="mr-1 inline" />
+              Date (optional)
+            </label>
+            <input
+              type="date"
+              value={date}
+              min={todayString()}
+              onChange={e => setDate(e.target.value)}
+              className="!rounded-xl"
+            />
           </div>
-        </div>
-
-        {/* Filters */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {[
-            { value: 'all', label: `All (${matches.length})` },
-            { value: 'driver', label: `With Driver (${matches.filter(m => m.ride.status !== 'looking-for-driver').length})` },
-            { value: 'no-driver', label: `Looking for Driver (${matches.filter(m => m.ride.status === 'looking-for-driver').length})` }
-          ].map(filter => (
+          {filtering && (
             <button
-              key={filter.value}
-              onClick={() => setFilterType(filter.value)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
-                filterType === filter.value
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
-              }`}
+              type="button"
+              onClick={clearAll}
+              className="rounded-xl px-3 py-2 text-sm font-medium text-secondary-600 hover:bg-secondary-100"
             >
-              {filter.label}
+              Clear
             </button>
-          ))}
+          )}
         </div>
       </div>
 
       {/* Results */}
-      <div className="p-4 md:p-6 space-y-4 max-w-4xl">
-        {filteredMatches.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-secondary-600 mb-4">No matching rides found</p>
-            <button
-              onClick={() => navigate('/')}
-              className="text-primary-600 hover:underline"
-            >
-              Try different search parameters
+      <div className="mt-6">
+        {error && (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}{' '}
+            <button type="button" onClick={load} className="font-semibold underline">
+              Try again
             </button>
           </div>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+          </div>
         ) : (
-          filteredMatches.map((match, index) => {
-            const ride = match.ride
-            const isBestMatch = index === 0 && match.score > 50
+          <>
+            <p className="mb-3 text-sm font-semibold text-secondary-600">
+              {filtering
+                ? `${matches.length} ride${matches.length === 1 ? '' : 's'} match your search`
+                : `${matches.length} upcoming ride${matches.length === 1 ? '' : 's'}`}
+            </p>
 
-            return (
-              <div
-                key={ride.id}
-                className={`bg-white border rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer ${
-                  isBestMatch ? 'border-primary-400 shadow-md' : 'border-secondary-200'
-                }`}
-                onClick={() => navigate(`/ride/${ride.id}`)}
-              >
-                {/* Best Match Badge */}
-                {isBestMatch && (
-                  <div className="bg-primary-50 border-b border-primary-200 px-4 py-2 flex items-center gap-2">
-                    <Star className="text-primary-600" size={16} fill="currentColor" />
-                    <span className="text-sm font-medium text-primary-700">Best Match</span>
-                  </div>
-                )}
-
-                <div className="p-4">
-                  {/* Time and Status */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="text-2xl font-bold text-secondary-900">
-                        {ride.departure_time}
-                      </p>
-                      <p className="text-sm text-secondary-600">
-                        {new Date(ride.date).toLocaleDateString('en-IN', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </p>
-                    </div>
-
-                    {/* Cost */}
-                    <div className="text-right">
-                      <p className="text-xl font-bold text-primary-600">
-                        {formatCost(ride.total_cost)}
-                      </p>
-                      <p className="text-xs text-secondary-600">
-                        {formatCost(Math.round(ride.total_cost / ride.max_seats))} per person
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Route */}
-                  <p className="text-sm text-secondary-700 mb-3 font-medium">
-                    {ride.origin} → {ride.destination}
-                  </p>
-
-                  {/* Ride Info */}
-                  <div className="grid grid-cols-3 gap-4 text-sm mb-4">
-                    <div className="flex items-center gap-2 text-secondary-700">
-                      <Users size={16} />
-                      <span>
-                        {getCurrentParticipants(ride)}/{ride.max_seats} going
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-secondary-700">
-                      <MapPin size={16} />
-                      <span>
-                        {getAvailableSeats(ride)} seat{getAvailableSeats(ride) !== 1 ? 's' : ''} left
-                      </span>
-                    </div>
-                    {ride.driver_name && (
-                      <div className="text-secondary-700">
-                        <span className="bg-primary-100 text-primary-700 px-2 py-1 rounded text-xs font-medium">
-                          Driver Available
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Driver Info */}
-                  {ride.driver_name && (
-                    <div className="bg-secondary-50 rounded p-3 mb-3 text-sm">
-                      <p className="text-secondary-700">
-                        <strong>Driver:</strong> {ride.driver_name}
-                      </p>
-                      <p className="text-secondary-600 text-xs">
-                        {ride.vehicle_type} • {ride.vehicle_number}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* CTA */}
-                  <button className="w-full bg-primary-600 text-white py-2 rounded-lg font-medium hover:bg-primary-700 transition-colors flex items-center justify-center gap-2">
-                    View Details
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
+            {matches.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-secondary-300 bg-white px-4 py-8 text-center">
+                <p className="font-medium text-secondary-800">
+                  {filtering ? 'No rides on this route yet.' : 'No rides posted yet.'}
+                </p>
+                <p className="mt-1 text-sm text-secondary-500">
+                  Post it yourself and other students can join you.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/create-ride', { state: { from, to, date } })}
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 font-semibold text-white hover:bg-primary-700"
+                >
+                  <Plus size={18} />
+                  Post this ride
+                </button>
               </div>
-            )
-          })
+            )}
+
+            <div className="space-y-3">
+              {matches.map(m => (
+                <RideCard key={m.ride.id} ride={m.ride} userId={user?.id} pickupKm={m.pickupKm} dropKm={m.dropKm} />
+              ))}
+            </div>
+
+            {others.length > 0 && (
+              <>
+                <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-secondary-500">
+                  Other upcoming rides
+                </h2>
+                <div className="space-y-3">
+                  {others.map(m => (
+                    <RideCard key={m.ride.id} ride={m.ride} userId={user?.id} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
         )}
       </div>
     </div>
