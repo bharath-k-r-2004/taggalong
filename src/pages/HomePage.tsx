@@ -40,9 +40,10 @@ export function HomePage() {
         </h1>
         <p className="text-primary-100 text-lg">Where are you going?</p>
         
-        {user?.user_metadata?.full_batch && (
+        {user?.user_metadata?.course && (
           <div className="mt-4 inline-block bg-white/20 px-3 py-1 rounded-full text-sm">
-            {user.user_metadata.full_batch}
+            {user.user_metadata.course}
+            {user.user_metadata.batch && ` · Batch ${user.user_metadata.batch}`}
           </div>
         )}
       </div>
