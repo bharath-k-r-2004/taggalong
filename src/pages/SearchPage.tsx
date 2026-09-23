@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowUpDown, CalendarDays, Plus, RefreshCw } from 'lucide-react'
+import { ArrowUpDown, CalendarDays, Clock, Plus, RefreshCw } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { LocationInput } from '../components/LocationInput'
 import { RideCard } from '../components/RideCard'
@@ -11,7 +11,18 @@ interface SearchState {
   from?: Place | null
   to?: Place | null
   date?: string
+  time?: string
 }
+
+// How far from the chosen time a ride may leave
+const FLEX_OPTIONS: { label: string; minutes: number | null }[] = [
+  { label: '±15 min', minutes: 15 },
+  { label: '±30 min', minutes: 30 },
+  { label: '±1 hr', minutes: 60 },
+  { label: '±2 hrs', minutes: 120 },
+  { label: '±4 hrs', minutes: 240 },
+  { label: 'Any time', minutes: null }
+]
 
 export function SearchPage() {
   const { user } = useAuth()
@@ -21,6 +32,8 @@ export function SearchPage() {
   const [from, setFrom] = useState<Place | null>(initial.from || null)
   const [to, setTo] = useState<Place | null>(initial.to || null)
   const [date, setDate] = useState(initial.date || '')
+  const [time, setTime] = useState(initial.time || '')
+  const [flexMinutes, setFlexMinutes] = useState<number | null>(60)
   const [rides, setRides] = useState<Ride[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -36,8 +49,11 @@ export function SearchPage() {
 
   useEffect(load, [])
 
-  const filtering = Boolean(from?.name || to?.name || date)
-  const results = useMemo(() => matchRides(rides, from, to, date), [rides, from, to, date])
+  const filtering = Boolean(from?.name || to?.name || date || time)
+  const results = useMemo(
+    () => matchRides(rides, { from, to, date, time, flexMinutes }),
+    [rides, from, to, date, time, flexMinutes]
+  )
   const matches = results.filter(r => r.isMatch)
   const others = filtering ? results.filter(r => !r.isMatch) : []
 
@@ -50,6 +66,8 @@ export function SearchPage() {
     setFrom(null)
     setTo(null)
     setDate('')
+    setTime('')
+    setFlexMinutes(60)
   }
 
   return (
@@ -96,11 +114,12 @@ export function SearchPage() {
           </button>
         </div>
 
-        <div className="mt-3 flex items-end gap-3">
-          <div className="flex-1">
+        {/* When */}
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-secondary-500">
               <CalendarDays size={12} className="mr-1 inline" />
-              Date (optional)
+              Date
             </label>
             <input
               type="date"
@@ -110,16 +129,54 @@ export function SearchPage() {
               className="!rounded-xl"
             />
           </div>
-          {filtering && (
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-secondary-500">
+              <Clock size={12} className="mr-1 inline" />
+              Leaving around
+            </label>
+            <input type="time" value={time} onChange={e => setTime(e.target.value)} className="!rounded-xl" />
+          </div>
+        </div>
+
+        {/* Flexibility */}
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-secondary-500">
+            How flexible are you?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {FLEX_OPTIONS.map(opt => {
+              const selected = flexMinutes === opt.minutes
+              return (
+                <button
+                  key={opt.label}
+                  type="button"
+                  disabled={!time}
+                  onClick={() => setFlexMinutes(opt.minutes)}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    selected && time
+                      ? 'border-primary-600 bg-primary-600 text-white'
+                      : 'border-secondary-200 bg-white text-secondary-700 hover:border-primary-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          {!time && <p className="mt-1.5 text-xs text-secondary-500">Pick a time above to filter by it.</p>}
+        </div>
+
+        {filtering && (
+          <div className="mt-3 text-right">
             <button
               type="button"
               onClick={clearAll}
-              className="rounded-xl px-3 py-2 text-sm font-medium text-secondary-600 hover:bg-secondary-100"
+              className="rounded-xl px-3 py-1.5 text-sm font-medium text-secondary-600 hover:bg-secondary-100"
             >
-              Clear
+              Clear all
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Results */}
@@ -141,7 +198,7 @@ export function SearchPage() {
           <>
             <p className="mb-3 text-sm font-semibold text-secondary-600">
               {filtering
-                ? `${matches.length} ride${matches.length === 1 ? '' : 's'} match your search`
+                ? `${matches.length} ride${matches.length === 1 ? ' matches' : 's match'} your search`
                 : `${matches.length} upcoming ride${matches.length === 1 ? '' : 's'}`}
             </p>
 
@@ -155,7 +212,7 @@ export function SearchPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => navigate('/create-ride', { state: { from, to, date } })}
+                  onClick={() => navigate('/create-ride', { state: { from, to, date, time } })}
                   className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 font-semibold text-white hover:bg-primary-700"
                 >
                   <Plus size={18} />
@@ -166,7 +223,14 @@ export function SearchPage() {
 
             <div className="space-y-3">
               {matches.map(m => (
-                <RideCard key={m.ride.id} ride={m.ride} userId={user?.id} pickupKm={m.pickupKm} dropKm={m.dropKm} />
+                <RideCard
+                  key={m.ride.id}
+                  ride={m.ride}
+                  userId={user?.id}
+                  pickupKm={m.pickupKm}
+                  dropKm={m.dropKm}
+                  minutesFromWanted={m.minutesFromWanted}
+                />
               ))}
             </div>
 
@@ -177,7 +241,7 @@ export function SearchPage() {
                 </h2>
                 <div className="space-y-3">
                   {others.map(m => (
-                    <RideCard key={m.ride.id} ride={m.ride} userId={user?.id} />
+                    <RideCard key={m.ride.id} ride={m.ride} userId={user?.id} minutesFromWanted={m.minutesFromWanted} />
                   ))}
                 </div>
               </>

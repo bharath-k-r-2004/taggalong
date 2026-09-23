@@ -176,10 +176,19 @@ export async function fetchMyRides(userId: string): Promise<Ride[]> {
 
 // ---------- matching (used by Find a ride) ----------
 
+export interface RideFilters {
+  from?: Place | null
+  to?: Place | null
+  date?: string // YYYY-MM-DD
+  time?: string // HH:MM the student wants to leave
+  flexMinutes?: number | null // how far from that time is OK (null = any time)
+}
+
 export interface RideMatch {
   ride: Ride
   pickupKm: number | null
   dropKm: number | null
+  minutesFromWanted: number | null // + leaves later than wanted, - leaves earlier
   isMatch: boolean
 }
 
@@ -206,22 +215,63 @@ function endMatches(
   return { km: null, ok: textMatches(rideText, query) }
 }
 
-export function matchRides(rides: Ride[], from?: Place | null, to?: Place | null, date?: string): RideMatch[] {
+// Minutes between the ride's departure and the time the student wants
+function minutesApart(ride: Ride, date?: string, time?: string): number | null {
+  if (!time) return null
+  if (date) {
+    const wanted = rideDateTime({ date, departure_time: time })
+    return Math.round((rideDateTime(ride).getTime() - wanted.getTime()) / 60000)
+  }
+  // No date chosen: compare the time of day only (so 11:50 PM and 12:10 AM are 20 min apart)
+  const toMin = (t: string) => {
+    const [h = 0, m = 0] = t.split(':').map(Number)
+    return h * 60 + m
+  }
+  let diff = toMin(ride.departure_time) - toMin(time)
+  if (diff > 720) diff -= 1440
+  if (diff < -720) diff += 1440
+  return diff
+}
+
+export function formatTimeGap(minutes: number): string {
+  const abs = Math.abs(minutes)
+  if (abs < 5) return 'Leaves at your time'
+  const h = Math.floor(abs / 60)
+  const m = abs % 60
+  const gap = h === 0 ? `${m} min` : m === 0 ? `${h} hr` : `${h} hr ${m} min`
+  return `Leaves ${gap} ${minutes > 0 ? 'later' : 'earlier'}`
+}
+
+export function matchRides(rides: Ride[], filters: RideFilters = {}): RideMatch[] {
+  const { from, to, date, time, flexMinutes } = filters
   return rides
     .map(ride => {
       const pickup = endMatches(ride.origin, { lat: ride.origin_lat, lng: ride.origin_lng }, from)
       const drop = endMatches(ride.destination, { lat: ride.destination_lat, lng: ride.destination_lng }, to)
       const dateOk = !date || ride.date === date
-      return { ride, pickupKm: pickup.km, dropKm: drop.km, isMatch: pickup.ok && drop.ok && dateOk }
+      const gap = minutesApart(ride, date, time)
+      const timeOk = gap === null || flexMinutes == null || Math.abs(gap) <= flexMinutes
+      return {
+        ride,
+        pickupKm: pickup.km,
+        dropKm: drop.km,
+        minutesFromWanted: gap,
+        isMatch: pickup.ok && drop.ok && dateOk && timeOk
+      }
     })
     .sort((a, b) => {
-      // Rides with free seats first, then the closest pickup + drop, then the earliest
+      // Rides with free seats first, then the closest pickup + drop,
+      // then the closest to the wanted time (or simply the earliest)
       const fullA = seatsLeft(a.ride) === 0 ? 1 : 0
       const fullB = seatsLeft(b.ride) === 0 ? 1 : 0
       if (fullA !== fullB) return fullA - fullB
       const distA = (a.pickupKm ?? 0) + (a.dropKm ?? 0)
       const distB = (b.pickupKm ?? 0) + (b.dropKm ?? 0)
       if (Math.abs(distA - distB) > 2) return distA - distB
+      if (a.minutesFromWanted !== null && b.minutesFromWanted !== null) {
+        const gapDiff = Math.abs(a.minutesFromWanted) - Math.abs(b.minutesFromWanted)
+        if (gapDiff !== 0) return gapDiff
+      }
       return rideDateTime(a.ride).getTime() - rideDateTime(b.ride).getTime()
     })
 }

@@ -13,6 +13,7 @@ interface Prefill {
   from?: Place | null
   to?: Place | null
   date?: string
+  time?: string
 }
 
 export function CreateRidePage() {
@@ -23,7 +24,7 @@ export function CreateRidePage() {
   const [from, setFrom] = useState<Place | null>(prefill.from || null)
   const [to, setTo] = useState<Place | null>(prefill.to || null)
   const [date, setDate] = useState(prefill.date || todayString())
-  const [time, setTime] = useState('')
+  const [time, setTime] = useState(prefill.time || '')
   const [totalCost, setTotalCost] = useState('')
   const [seats, setSeats] = useState('4')
   const [vehicleType, setVehicleType] = useState(VEHICLES[0])

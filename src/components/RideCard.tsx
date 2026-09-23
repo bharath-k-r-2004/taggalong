@@ -3,6 +3,7 @@ import { Car, Users } from 'lucide-react'
 import {
   Ride,
   formatDateLabel,
+  formatTimeGap,
   formatRupees,
   formatTime,
   myParticipation,
@@ -16,9 +17,10 @@ interface RideCardProps {
   userId?: string
   pickupKm?: number | null
   dropKm?: number | null
+  minutesFromWanted?: number | null
 }
 
-export function RideCard({ ride, userId, pickupKm, dropKm }: RideCardProps) {
+export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted }: RideCardProps) {
   const navigate = useNavigate()
   const left = seatsLeft(ride)
   const isMine = ride.creator_id === userId
@@ -33,6 +35,7 @@ export function RideCard({ ride, userId, pickupKm, dropKm }: RideCardProps) {
   else if (mine?.status === 'declined') badge = { text: 'Declined', className: 'bg-secondary-100 text-secondary-600' }
 
   const hints: string[] = []
+  if (minutesFromWanted != null) hints.push(formatTimeGap(minutesFromWanted))
   if (pickupKm != null) hints.push(pickupKm < 1 ? 'Pickup right near you' : `Pickup ${pickupKm.toFixed(1)} km away`)
   if (dropKm != null) hints.push(dropKm < 1 ? 'Drops at your destination' : `Drop ${dropKm.toFixed(1)} km from yours`)
 
