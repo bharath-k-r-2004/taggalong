@@ -1,5 +1,5 @@
-import { CheckCircle2, ChevronRight, UserCircle, Users, HeartHandshake } from 'lucide-react'
-import { RankedDriver } from '../lib/drivers'
+import { CalendarClock, CheckCircle2, ChevronRight, UserCircle, Users, HeartHandshake } from 'lucide-react'
+import { Availability, RankedDriver } from '../lib/drivers'
 import { formatRupees, shortPlace } from '../lib/rides'
 
 interface DriverCardProps {
@@ -7,9 +7,10 @@ interface DriverCardProps {
   onClick: () => void
   selected?: boolean
   mine?: boolean
+  availability?: Availability | null // already booked through TagAlong
 }
 
-export function DriverCard({ item, onClick, selected, mine }: DriverCardProps) {
+export function DriverCard({ item, onClick, selected, mine, availability }: DriverCardProps) {
   const { driver, routeQuote, latestQuote } = item
   const quote = routeQuote || latestQuote
 
@@ -28,6 +29,15 @@ export function DriverCard({ item, onClick, selected, mine }: DriverCardProps) {
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate font-semibold text-secondary-900">{driver.name}</span>
+          {availability && (
+            <span
+              className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                availability.level === 'clash' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              <CalendarClock size={11} /> {availability.badge}
+            </span>
+          )}
           {mine && (
             <span className="shrink-0 rounded-full bg-secondary-100 px-2 py-0.5 text-[10px] font-semibold text-secondary-600">
               Added by you
@@ -45,6 +55,11 @@ export function DriverCard({ item, onClick, selected, mine }: DriverCardProps) {
               ({shortPlace(quote.origin)} → {shortPlace(quote.destination)})
               {routeQuote ? ' · your route' : ''}
             </span>
+          </span>
+        )}
+        {availability && (
+          <span className={`mt-0.5 block text-xs ${availability.level === 'clash' ? 'text-red-700' : 'text-amber-800'}`}>
+            {availability.detail}
           </span>
         )}
         <span className="mt-1 flex flex-wrap gap-x-3 text-xs text-secondary-500">

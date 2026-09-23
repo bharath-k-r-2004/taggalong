@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
+  CalendarClock,
   Car,
   ChevronLeft,
   HeartHandshake,
@@ -16,13 +17,15 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { LocationInput } from '../components/LocationInput'
 import { Place } from '../lib/places'
-import { formatRupees, shortPlace } from '../lib/rides'
+import { formatDateLabel, formatRupees, formatTime, shortPlace } from '../lib/rides'
 import {
   Driver,
+  DriverBooking,
   DriverQuote,
   DriverTraveller,
   QUOTE_DISCLAIMER,
   RELATIONSHIPS,
+  fetchDriverBookings,
   fetchDrivers,
   fetchQuotes,
   fetchTravellers,
@@ -38,6 +41,7 @@ export function DriverProfilePage() {
   const [driver, setDriver] = useState<Driver | null>(null)
   const [quotes, setQuotes] = useState<DriverQuote[]>([])
   const [travellers, setTravellers] = useState<DriverTraveller[]>([])
+  const [bookings, setBookings] = useState<DriverBooking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -57,10 +61,16 @@ export function DriverProfilePage() {
   const load = useCallback(async () => {
     if (!id) return
     try {
-      const [all, q, t] = await Promise.all([fetchDrivers(), fetchQuotes(id), fetchTravellers(id)])
+      const [all, q, t, b] = await Promise.all([
+        fetchDrivers(),
+        fetchQuotes(id),
+        fetchTravellers(id),
+        fetchDriverBookings().catch(() => [] as DriverBooking[])
+      ])
       setDriver(all.find(d => d.id === id) || null)
       setQuotes(q)
       setTravellers(t)
+      setBookings(b.filter(x => x.driver_id === id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load this driver')
     } finally {
@@ -183,6 +193,41 @@ export function DriverProfilePage() {
             <p className="text-xs text-secondary-500">Students vouched</p>
           </div>
         </div>
+      </section>
+
+      {/* Upcoming TagAlong bookings, so students don't all call a driver who's already busy */}
+      <section className="mt-3 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
+        <h2 className="flex items-center gap-2 font-semibold text-secondary-900">
+          <CalendarClock size={18} className="text-primary-600" /> Upcoming TagAlong bookings
+        </h2>
+        {bookings.length === 0 ? (
+          <p className="mt-1 text-sm text-secondary-500">
+            No upcoming rides booked with this driver on TagAlong. He may still have work from outside TagAlong, so confirm when you call.
+          </p>
+        ) : (
+          <>
+            <div className="mt-2 divide-y divide-secondary-100">
+              {bookings.slice(0, 6).map(b => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => navigate(`/ride/${b.id}`)}
+                  className="flex w-full items-center justify-between gap-3 py-2 text-left hover:bg-secondary-50"
+                >
+                  <span className="text-sm font-medium text-secondary-900">
+                    {formatDateLabel(b.date)}, {formatTime(b.departure_time)}
+                  </span>
+                  <span className="truncate text-sm text-secondary-500">
+                    {shortPlace(b.origin)} → {shortPlace(b.destination)}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-amber-800">
+              If your trip is near one of these times, he's probably busy. Tip: join that ride instead, or pick another driver.
+            </p>
+          </>
+        )}
       </section>
 
       {/* Contact */}

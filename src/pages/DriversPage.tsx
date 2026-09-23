@@ -1,18 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Plus, Search } from 'lucide-react'
+import { CalendarDays, Clock, Plus, Search } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { LocationInput } from '../components/LocationInput'
 import { DriverCard } from '../components/DriverCard'
 import { Place } from '../lib/places'
-import { Driver, DriverQuote, QUOTE_DISCLAIMER, fetchDrivers, fetchQuotes, rankDrivers } from '../lib/drivers'
+import { todayString } from '../lib/rides'
+import {
+  Driver,
+  DriverBooking,
+  DriverQuote,
+  QUOTE_DISCLAIMER,
+  driverAvailability,
+  fetchDriverBookings,
+  fetchDrivers,
+  fetchQuotes,
+  rankDrivers
+} from '../lib/drivers'
 
 type Filter = 'all' | 'mine'
 
 export function DriversPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const initial = (useLocation().state as { from?: Place | null; to?: Place | null } | null) || {}
+  const initial =
+    (useLocation().state as { from?: Place | null; to?: Place | null; date?: string; time?: string } | null) || {}
 
   const [from, setFrom] = useState<Place | null>(initial.from || null)
   const [to, setTo] = useState<Place | null>(initial.to || null)
@@ -20,14 +32,18 @@ export function DriversPage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [quotes, setQuotes] = useState<DriverQuote[]>([])
+  const [bookings, setBookings] = useState<DriverBooking[]>([])
+  const [date, setDate] = useState(initial.date || '')
+  const [time, setTime] = useState(initial.time || '')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([fetchDrivers(), fetchQuotes()])
-      .then(([d, q]) => {
+    Promise.all([fetchDrivers(), fetchQuotes(), fetchDriverBookings().catch(() => [])])
+      .then(([d, q, b]) => {
         setDrivers(d)
         setQuotes(q)
+        setBookings(b)
       })
       .catch(err => setError(err.message || 'Could not load drivers'))
       .finally(() => setLoading(false))
@@ -72,6 +88,25 @@ export function DriversPage() {
             className="!border-0 !bg-transparent !p-0 !ring-0 focus:!ring-0"
           />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-secondary-500">
+              <CalendarDays size={12} className="mr-1 inline" />
+              Travel date
+            </label>
+            <input type="date" value={date} min={todayString()} onChange={e => setDate(e.target.value)} className="!rounded-xl" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-secondary-500">
+              <Clock size={12} className="mr-1 inline" />
+              Around
+            </label>
+            <input type="time" value={time} onChange={e => setTime(e.target.value)} className="!rounded-xl" />
+          </div>
+        </div>
+        <p className="-mt-1 text-xs text-secondary-500">
+          Add your date and time to see which drivers are already booked through TagAlong then.
+        </p>
         <div className="flex gap-2">
           {(['all', 'mine'] as Filter[]).map(f => (
             <button
@@ -120,6 +155,7 @@ export function DriversPage() {
                   key={item.driver.id}
                   item={item}
                   mine={item.driver.added_by_user_id === user?.id}
+                  availability={driverAvailability(bookings, item.driver.id, date || undefined, time || undefined)}
                   onClick={() => navigate(`/drivers/${item.driver.id}`)}
                 />
               ))}
@@ -133,6 +169,7 @@ export function DriversPage() {
                       key={item.driver.id}
                       item={item}
                       mine={item.driver.added_by_user_id === user?.id}
+                      availability={driverAvailability(bookings, item.driver.id, date || undefined, time || undefined)}
                       onClick={() => navigate(`/drivers/${item.driver.id}`)}
                     />
                   ))}

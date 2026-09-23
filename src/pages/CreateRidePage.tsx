@@ -345,6 +345,8 @@ export function CreateRidePage() {
                 selectedId={picked?.driver.id || null}
                 onSelect={pickDriver}
                 preselectId={prefill.driverId || null}
+                date={date}
+                time={time}
               />
             </section>
 

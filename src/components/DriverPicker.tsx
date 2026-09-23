@@ -2,7 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { DriverCard } from './DriverCard'
-import { Driver, DriverQuote, QUOTE_DISCLAIMER, RankedDriver, fetchDrivers, fetchQuotes, rankDrivers } from '../lib/drivers'
+import {
+  Driver,
+  DriverBooking,
+  DriverQuote,
+  QUOTE_DISCLAIMER,
+  RankedDriver,
+  driverAvailability,
+  fetchDriverBookings,
+  fetchDrivers,
+  fetchQuotes,
+  rankDrivers
+} from '../lib/drivers'
 import { Place } from '../lib/places'
 
 interface DriverPickerProps {
@@ -12,22 +23,26 @@ interface DriverPickerProps {
   selectedId: string | null
   onSelect: (item: RankedDriver | null) => void
   preselectId?: string | null // e.g. coming from a driver's profile
+  date?: string // the ride's date/time, to flag drivers already booked then
+  time?: string
 }
 
 // "Select your driver": drivers IIM Rohtak students have used, best fit for the route first
-export function DriverPicker({ from, to, userId, selectedId, onSelect, preselectId }: DriverPickerProps) {
+export function DriverPicker({ from, to, userId, selectedId, onSelect, preselectId, date, time }: DriverPickerProps) {
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [quotes, setQuotes] = useState<DriverQuote[]>([])
+  const [bookings, setBookings] = useState<DriverBooking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
-    Promise.all([fetchDrivers(), fetchQuotes()])
-      .then(([d, q]) => {
+    Promise.all([fetchDrivers(), fetchQuotes(), fetchDriverBookings().catch(() => [])])
+      .then(([d, q, b]) => {
         setDrivers(d)
         setQuotes(q)
+        setBookings(b)
       })
       .catch(() => setError('Could not load community drivers.'))
       .finally(() => setLoading(false))
@@ -86,6 +101,7 @@ export function DriverPicker({ from, to, userId, selectedId, onSelect, preselect
           item={item}
           mine={item.driver.added_by_user_id === userId}
           selected={item.driver.id === selectedId}
+          availability={driverAvailability(bookings, item.driver.id, date, time)}
           onClick={() => onSelect(item.driver.id === selectedId ? null : item)}
         />
       ))}

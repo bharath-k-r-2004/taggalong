@@ -1,6 +1,7 @@
 // Community driver network: directory, quotes, vouches.
 import { supabase } from './supabase'
 import { Place, distanceKm } from './places'
+import { formatDateLabel, formatTime, rideDateTime, shortPlace, todayString } from './rides'
 
 export interface Driver {
   id: string
@@ -232,4 +233,91 @@ export function rankDrivers(
 export function introducedBy(d: Pick<Driver, 'introducer_name' | 'introducer_course' | 'introducer_batch'>): string {
   const first = (d.introducer_name || 'A student').split(' ')[0]
   return d.introducer_course ? `${first} · ${d.introducer_course}${d.introducer_batch ? ` ${d.introducer_batch}` : ''}` : first
+}
+
+// ---------- availability (TagAlong bookings only) ----------
+
+export interface DriverBooking {
+  id: string
+  driver_id: string
+  date: string
+  departure_time: string
+  origin: string
+  destination: string
+  status: string
+}
+
+// Upcoming rides that already have a driver attached
+export async function fetchDriverBookings(): Promise<DriverBooking[]> {
+  const { data, error } = await supabase
+    .from('rides')
+    .select('id, driver_id, date, departure_time, origin, destination, status')
+    .not('driver_id', 'is', null)
+    .gte('date', todayString())
+    .not('status', 'in', '(cancelled,completed,looking)')
+    .order('date', { ascending: true })
+    .order('departure_time', { ascending: true })
+  if (error) throw error
+  // keep rides that haven't finished yet (assume a trip can take up to 3 hours)
+  const cutoff = Date.now() - 3 * 60 * 60 * 1000
+  return ((data || []) as DriverBooking[]).filter(b => rideDateTime(b).getTime() >= cutoff)
+}
+
+export interface Availability {
+  level: 'booked' | 'clash' // clash = booked close to the time you want
+  badge: string // short text beside the name
+  detail: string // one line under the card
+}
+
+// Hours either side of a booking when the driver is probably not free
+const CLASH_WINDOW_MIN = 180
+
+export function driverAvailability(
+  bookings: DriverBooking[],
+  driverId: string,
+  date?: string,
+  time?: string
+): Availability | null {
+  const mine = bookings.filter(b => b.driver_id === driverId)
+  if (mine.length === 0) return null
+  const route = (b: DriverBooking) => `${shortPlace(b.origin)} → ${shortPlace(b.destination)}`
+
+  if (date) {
+    const sameDay = mine.filter(b => b.date === date)
+    if (sameDay.length === 0) return null
+    if (time) {
+      const wanted = rideDateTime({ date, departure_time: time }).getTime()
+      const close = sameDay.find(b => Math.abs(rideDateTime(b).getTime() - wanted) / 60000 < CLASH_WINDOW_MIN)
+      if (close) {
+        return {
+          level: 'clash',
+          badge: `Busy around ${formatTime(close.departure_time)}`,
+          detail: `Already booked through TagAlong at ${formatTime(close.departure_time)} (${route(close)}) that day. Likely not free at your time.`
+        }
+      }
+    }
+    const times = sameDay.map(b => formatTime(b.departure_time)).join(', ')
+    return {
+      level: 'booked',
+      badge: `Booked that day`,
+      detail: `Has ${sameDay.length === 1 ? 'another ride' : `${sameDay.length} rides`} that day at ${times}. Check he's free before calling.`
+    }
+  }
+
+  const next = mine[0]
+  const when = formatDateLabel(next.date)
+  const more = mine.length > 1 ? ` (+${mine.length - 1} more)` : ''
+  const startedAgo = Date.now() - rideDateTime(next).getTime()
+  if (startedAgo >= 0) {
+    return {
+      level: 'clash',
+      badge: 'On a trip now',
+      detail: `Left at ${formatTime(next.departure_time)} for ${route(next)}${more}.`
+    }
+  }
+  return {
+    level: when === 'Today' ? 'clash' : 'booked',
+    badge: `Booked ${when === 'Today' || when === 'Tomorrow' ? when.toLowerCase() : when} · ${formatTime(next.departure_time)}`,
+    detail: `Next TagAlong ride: ${when}, ${formatTime(next.departure_time)}, ${route(next)}${more}.`
+  }
 }
