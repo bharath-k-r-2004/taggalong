@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   Car,
   Check,
   ChevronLeft,
   Clock,
+  HeartHandshake,
   MessageCircle,
   Phone,
   Share2,
@@ -15,20 +16,31 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { RideChat } from '../components/RideChat'
+import { Driver, fetchDrivers } from '../lib/drivers'
 import {
+  CANCEL_REASONS,
   Participant,
   Ride,
+  StudentStats,
   fetchRide,
   fetchRideContact,
+  fetchStudentStats,
+  flexibilityLabel,
   formatDateLabel,
   formatRupees,
   formatTime,
+  hasFare,
+  isLastMinute,
+  isTravelGroup,
   isUpcoming,
   myParticipation,
   peopleOnBoard,
+  placeFromRide,
   seatsLeft,
   shareIfYouJoin,
-  shareWhenFull
+  shareWhenFull,
+  timeAgo
 } from '../lib/rides'
 
 function personLabel(p?: { name: string | null; course: string | null; batch: string | null } | null) {
@@ -37,17 +49,33 @@ function personLabel(p?: { name: string | null; course: string | null; batch: st
   return `${p.name || 'Student'}${tag}`
 }
 
+const POSTED_MESSAGES: Record<string, string> = {
+  ride: 'Ride posted! It is now visible to IIM Rohtak students travelling your way.',
+  group: 'Travel request posted! Students going your way can now join your group.',
+  converted: 'Driver added. Your group is now a ride and the fare will be split automatically.'
+}
+
 export function RideDetailsPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
+  const justPosted = (location.state as { justPosted?: string } | null)?.justPosted
 
   const [ride, setRide] = useState<Ride | null>(null)
   const [contact, setContact] = useState<string | null>(null)
+  const [driver, setDriver] = useState<Driver | null>(null)
+  const [stats, setStats] = useState<Record<string, StudentStats | null>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(justPosted ? POSTED_MESSAGES[justPosted] || null : null)
+
+  // small inline panels
+  const [joinOpen, setJoinOpen] = useState(false)
+  const [joinMessage, setJoinMessage] = useState('')
+  const [cancelOpen, setCancelOpen] = useState<'leave' | 'ride' | null>(null)
+  const [cancelReason, setCancelReason] = useState(CANCEL_REASONS[0])
 
   const load = useCallback(async () => {
     if (!id) return
@@ -55,8 +83,15 @@ export function RideDetailsPage() {
       const data = await fetchRide(id)
       setRide(data)
       setError(null)
+      if (!data) return
       // The database only returns the number to the poster and accepted riders
-      if (data) setContact(await fetchRideContact(id).catch(() => null))
+      setContact(await fetchRideContact(id).catch(() => null))
+      if (data.driver_id) {
+        const all = await fetchDrivers().catch(() => [])
+        setDriver(all.find(d => d.id === data.driver_id) || null)
+      } else {
+        setDriver(null)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load this ride')
     } finally {
@@ -67,6 +102,19 @@ export function RideDetailsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // Poster sees each requester's track record (facts only)
+  const isCreator = ride?.creator_id === user?.id
+  const requestIds = (ride?.ride_participants || []).filter(p => p.status === 'requested').map(p => p.user_id)
+  useEffect(() => {
+    if (!isCreator) return
+    const missing = requestIds.filter(uid => !(uid in stats))
+    if (missing.length === 0) return
+    void Promise.all(missing.map(uid => fetchStudentStats(uid).then(s => [uid, s] as const))).then(pairs =>
+      setStats(prev => ({ ...prev, ...Object.fromEntries(pairs) }))
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCreator, requestIds.join(',')])
 
   const run = async (action: () => PromiseLike<{ error: { message: string } | null }>, success: string) => {
     try {
@@ -102,14 +150,16 @@ export function RideDetailsPage() {
     )
   }
 
-  const isCreator = ride.creator_id === user?.id
   const mine = myParticipation(ride, user?.id)
   const upcoming = isUpcoming(ride)
+  const active = upcoming && ride.status !== 'cancelled'
+  const group = isTravelGroup(ride)
   const left = seatsLeft(ride)
   const onBoard = peopleOnBoard(ride)
   const accepted = (ride.ride_participants || []).filter(p => p.status === 'accepted')
   const requests = (ride.ride_participants || []).filter(p => p.status === 'requested')
-  const canSeeContact = Boolean(contact) && (isCreator || mine?.status === 'accepted')
+  const isMember = isCreator || mine?.status === 'accepted'
+  const canSeeContact = Boolean(contact) && isMember
 
   const requestToJoin = () =>
     run(
@@ -118,14 +168,36 @@ export function RideDetailsPage() {
           ride_id: ride.id,
           user_id: user!.id,
           status: 'requested',
-          contribution_amount: Math.ceil(shareIfYouJoin(ride))
+          message: joinMessage.trim() || null,
+          contribution_amount: hasFare(ride) ? Math.ceil(shareIfYouJoin(ride)) : null
         }),
-      "Request sent! You'll see the driver's number once the poster accepts."
-    )
+      group
+        ? 'Request sent! The group introducer will accept you shortly.'
+        : "Request sent! You'll see the driver's number once the poster accepts."
+    ).then(() => setJoinOpen(false))
 
-  const withdraw = (p: Participant, leaving: boolean) => {
-    if (!window.confirm(leaving ? 'Leave this ride?' : 'Withdraw your request?')) return
-    void run(() => supabase.from('ride_participants').delete().eq('id', p.id), leaving ? 'You left the ride.' : 'Request withdrawn.')
+  const withdrawRequest = (p: Participant) => {
+    if (!window.confirm('Withdraw your request?')) return
+    void run(() => supabase.from('ride_participants').delete().eq('id', p.id), 'Request withdrawn.')
+  }
+
+  const confirmCancel = () => {
+    const now = new Date().toISOString()
+    if (cancelOpen === 'leave' && mine) {
+      void run(
+        () =>
+          supabase
+            .from('ride_participants')
+            .update({ status: 'cancelled', cancel_reason: cancelReason, cancelled_at: now })
+            .eq('id', mine.id),
+        'You left the ride.'
+      ).then(() => setCancelOpen(null))
+    } else if (cancelOpen === 'ride') {
+      void run(
+        () => supabase.from('rides').update({ status: 'cancelled', cancel_reason: cancelReason, cancelled_at: now }).eq('id', ride.id),
+        'Ride cancelled.'
+      ).then(() => setCancelOpen(null))
+    }
   }
 
   const respond = (p: Participant, status: 'accepted' | 'declined') =>
@@ -134,16 +206,26 @@ export function RideDetailsPage() {
       status === 'accepted' ? `${p.user?.name || 'Student'} is in!` : 'Request declined.'
     )
 
-  const cancelRide = () => {
-    if (!window.confirm('Cancel this ride for everyone? This cannot be undone.')) return
-    void run(() => supabase.from('rides').update({ status: 'cancelled' }).eq('id', ride.id), 'Ride cancelled.')
-  }
+  const addDriverToGroup = () =>
+    navigate('/create-ride', {
+      state: {
+        convertRideId: ride.id,
+        from: placeFromRide(ride, 'origin'),
+        to: placeFromRide(ride, 'destination'),
+        date: ride.date,
+        time: ride.departure_time.slice(0, 5),
+        seats: ride.max_seats,
+        onBoard,
+        flex: ride.time_flexibility,
+        notes: ride.notes
+      }
+    })
 
   const share = async () => {
     const url = window.location.href
-    const text = `Ride on TagAlong: ${ride.origin} → ${ride.destination}, ${formatDateLabel(ride.date)} at ${formatTime(ride.departure_time)}`
+    const text = `${group ? 'Travel group' : 'Ride'} on TagAlong: ${ride.origin} → ${ride.destination}, ${formatDateLabel(ride.date)} at ${formatTime(ride.departure_time)}`
     try {
-      if (navigator.share) await navigator.share({ title: 'TagAlong ride', text, url })
+      if (navigator.share) await navigator.share({ title: 'TagAlong', text, url })
       else {
         await navigator.clipboard.writeText(`${text}\n${url}`)
         setNotice('Link copied. Paste it in your batch group!')
@@ -152,6 +234,38 @@ export function RideDetailsPage() {
       // user closed the share sheet
     }
   }
+
+  const cancelPanel = (
+    <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
+      <p className="font-semibold text-secondary-900">
+        {cancelOpen === 'ride' ? 'Cancel this ride for everyone?' : 'Leave this ride?'}
+      </p>
+      <label className="mt-2 block text-sm text-secondary-700">Why?</label>
+      <select value={cancelReason} onChange={e => setCancelReason(e.target.value)} className="!rounded-xl !py-2">
+        {CANCEL_REASONS.map(r => (
+          <option key={r}>{r}</option>
+        ))}
+      </select>
+      {isLastMinute(ride) && (
+        <p className="mt-2 text-xs text-amber-700">
+          The ride leaves within 2 hours, so this will be recorded as a last-minute cancellation.
+        </p>
+      )}
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={confirmCancel}
+          className="flex-1 rounded-xl bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          {cancelOpen === 'ride' ? 'Cancel ride' : 'Leave ride'}
+        </button>
+        <button type="button" onClick={() => setCancelOpen(null)} className="flex-1 rounded-xl border border-secondary-300 py-2.5 font-semibold">
+          Keep it
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4">
@@ -178,10 +292,24 @@ export function RideDetailsPage() {
       {error && <div className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {ride.status === 'cancelled' && (
-        <div className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">This ride was cancelled.</div>
+        <div className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          This ride was cancelled{ride.cancel_reason ? ` (${ride.cancel_reason.toLowerCase()})` : ''}.
+        </div>
       )}
       {ride.status !== 'cancelled' && !upcoming && (
         <div className="mb-3 rounded-xl bg-secondary-100 px-4 py-3 text-sm text-secondary-700">This ride has already left.</div>
+      )}
+
+      {/* Travel group banner */}
+      {group && ride.status !== 'cancelled' && (
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="flex items-center gap-2 font-semibold text-amber-900">
+            <Car size={18} /> Looking for a driver
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            This group is looking for a reliable driver. Join the group to connect, discuss and finalise a driver together.
+          </p>
+        </div>
       )}
 
       {/* Trip summary */}
@@ -191,7 +319,7 @@ export function RideDetailsPage() {
             <p className="text-3xl font-bold text-secondary-900">{formatTime(ride.departure_time)}</p>
             <p className="flex items-center gap-1 text-secondary-600">
               <Clock size={14} />
-              {formatDateLabel(ride.date)}
+              {formatDateLabel(ride.date)} · {flexibilityLabel(ride.time_flexibility)}
             </p>
           </div>
           <span
@@ -229,33 +357,77 @@ export function RideDetailsPage() {
         )}
       </section>
 
-      {/* Fare */}
-      <section className="mt-3 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold text-secondary-900">Fare split</h2>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-secondary-600">Total fare</span>
-            <span className="font-semibold">{formatRupees(Number(ride.total_cost))}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-secondary-600">People on board now</span>
-            <span className="font-semibold">
-              {onBoard} of {ride.max_seats}
-            </span>
-          </div>
-          {!isCreator && !mine && left > 0 && (
-            <div className="flex justify-between">
-              <span className="text-secondary-600">Your share if you join now</span>
-              <span className="font-semibold">{formatRupees(shareIfYouJoin(ride))}</span>
+      {/* Fare (or group status for travel groups) */}
+      {group ? (
+        <section className="mt-3 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-3 font-semibold text-secondary-900">Group status</h2>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-secondary-50 p-3">
+              <p className="text-xl font-bold text-secondary-900">{onBoard}</p>
+              <p className="text-xs text-secondary-500">Students in group</p>
             </div>
-          )}
-          <div className="flex justify-between rounded-xl bg-primary-50 px-3 py-2">
-            <span className="font-medium text-primary-800">Each pays when full</span>
-            <span className="font-bold text-primary-800">{formatRupees(shareWhenFull(ride))}</span>
+            <div className="rounded-xl bg-secondary-50 p-3">
+              <p className="font-semibold text-secondary-900">Driver</p>
+              <p className="text-xs text-secondary-500">Not added yet</p>
+            </div>
+            <div className="rounded-xl bg-secondary-50 p-3">
+              <p className="font-semibold text-secondary-900">Price</p>
+              <p className="text-xs text-secondary-500">To be decided</p>
+            </div>
           </div>
-          <p className="text-xs text-secondary-500">The fare is split equally; your share drops as more people join. Pay the poster directly.</p>
-        </div>
-      </section>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {isCreator && active && (
+              <button
+                type="button"
+                onClick={addDriverToGroup}
+                className="flex-1 rounded-xl bg-primary-600 px-4 py-2.5 font-semibold text-white hover:bg-primary-700"
+              >
+                Add driver & fare
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() =>
+                navigate('/drivers', { state: { from: placeFromRide(ride, 'origin'), to: placeFromRide(ride, 'destination') } })
+              }
+              className="flex-1 rounded-xl border border-secondary-300 px-4 py-2.5 font-semibold text-secondary-800 hover:bg-secondary-50"
+            >
+              Find a driver
+            </button>
+          </div>
+        </section>
+      ) : (
+        <section className="mt-3 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-3 font-semibold text-secondary-900">Fare split</h2>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-secondary-600">Total fare</span>
+              <span className="font-semibold">
+                {formatRupees(Number(ride.total_cost))}
+                {ride.toll_included === true && <span className="font-normal text-secondary-500"> · toll included</span>}
+                {ride.toll_included === false && <span className="font-normal text-secondary-500"> · toll extra</span>}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-secondary-600">People on board now</span>
+              <span className="font-semibold">
+                {onBoard} of {ride.max_seats}
+              </span>
+            </div>
+            {!isCreator && !mine && left > 0 && (
+              <div className="flex justify-between">
+                <span className="text-secondary-600">Your share if you join now</span>
+                <span className="font-semibold">{formatRupees(shareIfYouJoin(ride))}</span>
+              </div>
+            )}
+            <div className="flex justify-between rounded-xl bg-primary-50 px-3 py-2">
+              <span className="font-medium text-primary-800">Each pays when full</span>
+              <span className="font-bold text-primary-800">{formatRupees(shareWhenFull(ride))}</span>
+            </div>
+            <p className="text-xs text-secondary-500">The fare is split equally; your share drops as more people join. Pay the poster directly.</p>
+          </div>
+        </section>
+      )}
 
       {/* People & vehicle */}
       <section className="mt-3 space-y-4 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
@@ -264,24 +436,41 @@ export function RideDetailsPage() {
             <UserCircle size={20} />
           </span>
           <div>
-            <p className="text-xs uppercase tracking-wide text-secondary-500">Posted by</p>
+            <p className="text-xs uppercase tracking-wide text-secondary-500">{group ? 'Introduced by' : 'Posted by'}</p>
             <p className="font-semibold text-secondary-900">{isCreator ? 'You' : personLabel(ride.creator)}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary-100 text-secondary-700">
-            <Car size={20} />
-          </span>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-secondary-500">Vehicle</p>
-            <p className="font-semibold text-secondary-900">
-              {ride.vehicle_type || 'Vehicle'}
-              {ride.vehicle_number && <span className="ml-2 font-mono text-sm text-secondary-600">{ride.vehicle_number}</span>}
-            </p>
-            {ride.driver_name && <p className="text-sm text-secondary-600">Driver: {ride.driver_name}</p>}
+        {!group && (
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary-100 text-secondary-700">
+              <Car size={20} />
+            </span>
+            <div className="flex-1">
+              <p className="text-xs uppercase tracking-wide text-secondary-500">Vehicle</p>
+              <p className="font-semibold text-secondary-900">
+                {ride.vehicle_type || 'Vehicle'}
+                {ride.vehicle_number && <span className="ml-2 font-mono text-sm text-secondary-600">{ride.vehicle_number}</span>}
+              </p>
+              {ride.driver_name && <p className="text-sm text-secondary-600">Driver: {ride.driver_name}</p>}
+              {driver && (
+                <div className="mt-2 rounded-xl bg-primary-50 px-3 py-2 text-sm text-primary-900">
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="flex items-center gap-1">
+                      <Users size={14} /> {driver.unique_students} IIM Rohtak student{driver.unique_students === 1 ? '' : 's'} travelled
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <HeartHandshake size={14} /> {driver.vouch_count} vouched
+                    </span>
+                  </p>
+                  <Link to={`/drivers/${driver.id}`} className="mt-1 inline-block font-semibold text-primary-700 hover:underline">
+                    View driver profile →
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {accepted.length > 0 && (
           <div className="flex items-start gap-3">
@@ -289,11 +478,13 @@ export function RideDetailsPage() {
               <Users size={20} />
             </span>
             <div className="flex-1">
-              <p className="text-xs uppercase tracking-wide text-secondary-500">Co-travellers</p>
+              <p className="text-xs uppercase tracking-wide text-secondary-500">
+                {group ? 'Students in this group' : 'Co-travellers'}
+              </p>
               {accepted.map(p => (
                 <div key={p.id} className="flex items-center justify-between py-1">
                   <span className="text-secondary-900">{p.user_id === user?.id ? 'You' : personLabel(p.user)}</span>
-                  {isCreator && upcoming && ride.status !== 'cancelled' && (
+                  {isCreator && active && (
                     <button
                       type="button"
                       disabled={busy}
@@ -312,29 +503,29 @@ export function RideDetailsPage() {
         )}
 
         {canSeeContact && (
-          <p className="-mb-2 text-xs uppercase tracking-wide text-secondary-500">
-            Driver{ride.driver_name ? ` · ${ride.driver_name}` : ''} · +91 {contact}
-          </p>
-        )}
-        {canSeeContact && (
-          <div className="flex gap-2 pt-1">
-            <a
-              href={`tel:+91${contact}`}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-secondary-300 py-2.5 font-semibold text-secondary-800 hover:bg-secondary-50"
-            >
-              <Phone size={18} />
-              Call driver
-            </a>
-            <a
-              href={`https://wa.me/91${contact}?text=${encodeURIComponent(`Hi, I'm a passenger for the ride from ${ride.origin} to ${ride.destination} on ${formatDateLabel(ride.date)} at ${formatTime(ride.departure_time)}.`)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#25D366] py-2.5 font-semibold text-white hover:opacity-90"
-            >
-              <MessageCircle size={18} />
-              WhatsApp driver
-            </a>
-          </div>
+          <>
+            <p className="-mb-2 text-xs uppercase tracking-wide text-secondary-500">
+              Driver{ride.driver_name ? ` · ${ride.driver_name}` : ''} · +91 {contact}
+            </p>
+            <div className="flex gap-2 pt-1">
+              <a
+                href={`tel:+91${contact}`}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-secondary-300 py-2.5 font-semibold text-secondary-800 hover:bg-secondary-50"
+              >
+                <Phone size={18} />
+                Call driver
+              </a>
+              <a
+                href={`https://wa.me/91${contact}?text=${encodeURIComponent(`Hi, I'm a passenger for the ride from ${ride.origin} to ${ride.destination} on ${formatDateLabel(ride.date)} at ${formatTime(ride.departure_time)}.`)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#25D366] py-2.5 font-semibold text-white hover:opacity-90"
+              >
+                <MessageCircle size={18} />
+                WhatsApp driver
+              </a>
+            </div>
+          </>
         )}
       </section>
 
@@ -344,42 +535,64 @@ export function RideDetailsPage() {
           <h2 className="mb-2 font-semibold text-amber-900">
             {requests.length} request{requests.length > 1 ? 's' : ''} to join
           </h2>
-          {requests.map(p => (
-            <div key={p.id} className="flex items-center justify-between gap-2 border-t border-amber-200 py-2 first:border-0">
-              <span className="text-secondary-900">{personLabel(p.user)}</span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={busy || left === 0 || !upcoming}
-                  onClick={() => void respond(p, 'accepted')}
-                  className="flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
-                >
-                  <Check size={16} /> Accept
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void respond(p, 'declined')}
-                  className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-secondary-700 hover:bg-secondary-100 disabled:opacity-50"
-                >
-                  <X size={16} /> Decline
-                </button>
+          {requests.map(p => {
+            const s = stats[p.user_id]
+            return (
+              <div key={p.id} className="border-t border-amber-200 py-3 first:border-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-secondary-900">{personLabel(p.user)}</p>
+                    <p className="text-xs text-secondary-600">
+                      Verified IIM Rohtak student · requested {timeAgo(p.joined_at)}
+                    </p>
+                    {s && (
+                      <p className="text-xs text-secondary-600">
+                        Completed trips: {s.completed_trips} · Last-minute cancellations: {s.last_minute_cancellations}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || left === 0 || !upcoming}
+                      onClick={() => void respond(p, 'accepted')}
+                      className="flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+                    >
+                      <Check size={16} /> Accept
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void respond(p, 'declined')}
+                      className="flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-secondary-700 hover:bg-secondary-100 disabled:opacity-50"
+                    >
+                      <X size={16} /> Decline
+                    </button>
+                  </div>
+                </div>
+                {p.message && (
+                  <p className="mt-2 rounded-lg bg-white px-3 py-2 text-sm italic text-secondary-700">"{p.message}"</p>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
           {left === 0 && <p className="mt-2 text-xs text-amber-800">The ride is full. Remove someone to accept more.</p>}
         </section>
       )}
 
+      {/* Group chat for the poster and confirmed travellers */}
+      {isMember && user && ride.status !== 'cancelled' && <RideChat rideId={ride.id} userId={user.id} />}
+
       {/* Main action */}
       <div className="sticky bottom-20 mt-4 md:bottom-4">
-        {isCreator ? (
-          upcoming &&
-          ride.status !== 'cancelled' && (
+        {cancelOpen ? (
+          cancelPanel
+        ) : isCreator ? (
+          active && (
             <button
               type="button"
               disabled={busy}
-              onClick={cancelRide}
+              onClick={() => setCancelOpen('ride')}
               className="w-full rounded-xl border border-red-200 bg-white py-3 font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-50"
             >
               Cancel ride
@@ -388,9 +601,13 @@ export function RideDetailsPage() {
         ) : mine?.status === 'accepted' ? (
           <div className="rounded-xl bg-primary-600 p-4 text-white shadow-md">
             <p className="font-semibold">You're in! 🎉</p>
-            <p className="text-sm text-primary-100">Call or WhatsApp the driver above to confirm the pickup.</p>
-            {upcoming && (
-              <button type="button" disabled={busy} onClick={() => withdraw(mine, true)} className="mt-2 text-sm underline">
+            <p className="text-sm text-primary-100">
+              {group
+                ? 'Use the group chat above to agree on a driver together.'
+                : 'Call or WhatsApp the driver above to confirm the pickup.'}
+            </p>
+            {active && (
+              <button type="button" disabled={busy} onClick={() => setCancelOpen('leave')} className="mt-2 text-sm underline">
                 Leave ride
               </button>
             )}
@@ -399,12 +616,13 @@ export function RideDetailsPage() {
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
             <p className="font-semibold text-amber-900">Request sent</p>
             <p className="text-sm text-amber-800">
-              Waiting for {ride.creator?.name || 'the poster'} to accept. The driver's number appears here once they do.
+              Waiting for {ride.creator?.name || 'the poster'} to accept.
+              {!group && " The driver's number appears here once they do."}
             </p>
             <button
               type="button"
               disabled={busy}
-              onClick={() => withdraw(mine, false)}
+              onClick={() => withdrawRequest(mine)}
               className="mt-2 text-sm font-medium text-amber-900 underline"
             >
               Withdraw request
@@ -414,18 +632,57 @@ export function RideDetailsPage() {
           <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">
             The poster couldn't take you on this ride. Try another one.
           </div>
+        ) : mine?.status === 'cancelled' ? (
+          <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">You left this ride.</div>
         ) : (
-          upcoming &&
-          ride.status !== 'cancelled' && (
+          active &&
+          (joinOpen ? (
+            <div className="rounded-xl border border-secondary-200 bg-white p-4 shadow-md">
+              <label className="mb-1 block text-sm font-medium text-secondary-700">
+                Message to {ride.creator?.name?.split(' ')[0] || 'the poster'} <span className="font-normal text-secondary-400">(optional)</span>
+              </label>
+              <textarea
+                value={joinMessage}
+                onChange={e => setJoinMessage(e.target.value)}
+                rows={2}
+                maxLength={300}
+                placeholder="Hi, I would like to join this ride."
+                className="!rounded-xl"
+              />
+              {!group && hasFare(ride) && (
+                <p className="mt-2 text-xs text-secondary-500">
+                  Total fare {formatRupees(Number(ride.total_cost))} is split equally among everyone on board. Your share if accepted now:{' '}
+                  {formatRupees(shareIfYouJoin(ride))}.
+                </p>
+              )}
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void requestToJoin()}
+                  className="flex-1 rounded-xl bg-primary-600 py-3 font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {busy ? 'Sending...' : 'Send request'}
+                </button>
+                <button type="button" onClick={() => setJoinOpen(false)} className="rounded-xl border border-secondary-300 px-4 font-semibold">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
             <button
               type="button"
               disabled={busy || left === 0}
-              onClick={() => void requestToJoin()}
+              onClick={() => setJoinOpen(true)}
               className="w-full rounded-xl bg-primary-600 py-3.5 text-lg font-semibold text-white shadow-md hover:bg-primary-700 disabled:opacity-50"
             >
-              {left === 0 ? 'Ride is full' : busy ? 'Sending...' : `Request to join · ${formatRupees(shareIfYouJoin(ride))}`}
+              {left === 0
+                ? 'Ride is full'
+                : group
+                ? 'Join group'
+                : `Request to join · ${formatRupees(shareIfYouJoin(ride))}`}
             </button>
-          )
+          ))
         )}
       </div>
     </div>

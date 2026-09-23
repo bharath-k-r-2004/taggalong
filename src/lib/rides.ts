@@ -8,12 +8,14 @@ export interface Profile {
   batch: string | null
 }
 
-export type ParticipantStatus = 'requested' | 'accepted' | 'declined'
+export type ParticipantStatus = 'requested' | 'accepted' | 'declined' | 'cancelled'
 
 export interface Participant {
   id: string
   user_id: string
   status: ParticipantStatus
+  message?: string | null
+  joined_at?: string | null
   user?: Profile | null
 }
 
@@ -28,14 +30,19 @@ export interface Ride {
   destination_lng: number | null
   date: string // YYYY-MM-DD
   departure_time: string // HH:MM:SS
-  total_cost: number
+  total_cost: number | null // empty for travel groups still looking for a driver
   max_seats: number
   current_participants: number | null
   driver_name: string | null
   vehicle_type: string | null
   vehicle_number: string | null
   notes: string | null
-  status: 'open' | 'full' | 'cancelled' | 'completed' | string
+  driver_id: string | null
+  time_flexibility: number | null // minutes either side; null = flexible
+  toll_included: boolean | null
+  cancel_reason: string | null
+  // open / full / looking (travel group, no driver yet) / cancelled / completed
+  status: 'open' | 'full' | 'looking' | 'cancelled' | 'completed' | string
   created_at: string
   creator?: Profile | null
   ride_participants?: Participant[]
@@ -46,8 +53,9 @@ export interface Ride {
 export const RIDE_SELECT =
   'id, creator_id, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, ' +
   'date, departure_time, total_cost, max_seats, current_participants, driver_name, vehicle_type, ' +
-  'vehicle_number, notes, status, created_at, ' +
-  'creator:users(name, course, batch), ride_participants(id, user_id, status, user:users(name, course, batch))'
+  'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ' +
+  'creator:users(name, course, batch), ' +
+  'ride_participants(id, user_id, status, message, joined_at, user:users(name, course, batch))'
 
 // ---------- dates & times ----------
 
@@ -101,6 +109,57 @@ export function seatsLeft(ride: Ride): number {
   return Math.max(0, ride.max_seats - peopleOnBoard(ride))
 }
 
+export function isTravelGroup(ride: Ride): boolean {
+  return ride.status === 'looking'
+}
+
+export function hasFare(ride: Ride): boolean {
+  return ride.total_cost != null && Number(ride.total_cost) > 0
+}
+
+export const FLEXIBILITY_OPTIONS: { label: string; minutes: number | null }[] = [
+  { label: 'Exact', minutes: 0 },
+  { label: '± 30 mins', minutes: 30 },
+  { label: '± 1 hour', minutes: 60 },
+  { label: 'Flexible', minutes: null }
+]
+
+export function flexibilityLabel(minutes: number | null | undefined): string {
+  if (minutes == null) return 'Flexible'
+  if (minutes === 0) return 'Exact time'
+  return minutes >= 60 ? `± ${minutes / 60} hour${minutes > 60 ? 's' : ''}` : `± ${minutes} mins`
+}
+
+export function timeAgo(iso?: string | null): string {
+  if (!iso) return ''
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`
+  const days = Math.round(hrs / 24)
+  return `${days} day${days > 1 ? 's' : ''} ago`
+}
+
+export const CANCEL_REASONS = ['Emergency', 'Change of plans', 'No longer travelling', 'Other']
+
+// Cancelling within 2 hours of departure counts as a last-minute cancellation
+export function isLastMinute(ride: Ride): boolean {
+  return rideDateTime(ride).getTime() - Date.now() < 2 * 60 * 60 * 1000
+}
+
+export interface StudentStats {
+  completed_trips: number
+  cancelled_trips: number
+  last_minute_cancellations: number
+}
+
+export async function fetchStudentStats(userId: string): Promise<StudentStats | null> {
+  const { data, error } = await supabase.rpc('student_stats', { p_user: userId })
+  if (error) return null
+  return ((data || [])[0] as StudentStats) || null
+}
+
 export function formatRupees(amount: number): string {
   return `₹${Math.ceil(amount).toLocaleString('en-IN')}`
 }
@@ -135,7 +194,7 @@ export async function fetchUpcomingRides(): Promise<Ride[]> {
     .from('rides')
     .select(RIDE_SELECT)
     .gte('date', todayString())
-    .neq('status', 'cancelled')
+    .not('status', 'in', '(cancelled,completed)')
     .order('date', { ascending: true })
     .order('departure_time', { ascending: true })
 
@@ -250,7 +309,9 @@ export function matchRides(rides: Ride[], filters: RideFilters = {}): RideMatch[
       const drop = endMatches(ride.destination, { lat: ride.destination_lat, lng: ride.destination_lng }, to)
       const dateOk = !date || ride.date === date
       const gap = minutesApart(ride, date, time)
-      const timeOk = gap === null || flexMinutes == null || Math.abs(gap) <= flexMinutes
+      // Both sides' flexibility counts: the student's window plus the ride's own window
+      const rideFlex = ride.time_flexibility ?? 120
+      const timeOk = gap === null || flexMinutes == null || Math.abs(gap) <= flexMinutes + rideFlex
       return {
         ride,
         pickupKm: pickup.km,
@@ -260,20 +321,39 @@ export function matchRides(rides: Ride[], filters: RideFilters = {}): RideMatch[
       }
     })
     .sort((a, b) => {
-      // Rides with free seats first, then the closest pickup + drop,
-      // then the closest to the wanted time (or simply the earliest)
+      // 1. rides with a free seat first
       const fullA = seatsLeft(a.ride) === 0 ? 1 : 0
       const fullB = seatsLeft(b.ride) === 0 ? 1 : 0
       if (fullA !== fullB) return fullA - fullB
-      const distA = (a.pickupKm ?? 0) + (a.dropKm ?? 0)
-      const distB = (b.pickupKm ?? 0) + (b.dropKm ?? 0)
-      if (Math.abs(distA - distB) > 2) return distA - distB
+      // 2. route: closer pickup + drop (within ~10 km counts as the same route)
+      const routeA = Math.floor(((a.pickupKm ?? 0) + (a.dropKm ?? 0)) / 10)
+      const routeB = Math.floor(((b.pickupKm ?? 0) + (b.dropKm ?? 0)) / 10)
+      if (routeA !== routeB) return routeA - routeB
+      // 3. time: closer to the wanted time (in 30-minute steps)
       if (a.minutesFromWanted !== null && b.minutesFromWanted !== null) {
-        const gapDiff = Math.abs(a.minutesFromWanted) - Math.abs(b.minutesFromWanted)
-        if (gapDiff !== 0) return gapDiff
+        const timeA = Math.floor(Math.abs(a.minutesFromWanted) / 30)
+        const timeB = Math.floor(Math.abs(b.minutesFromWanted) / 30)
+        if (timeA !== timeB) return timeA - timeB
       }
+      // 4. occupancy first: rides that already have more students (fills cars, fewer separate rides)
+      const peopleDiff = peopleOnBoard(b.ride) - peopleOnBoard(a.ride)
+      if (peopleDiff !== 0) return peopleDiff
+      // 5. rides that already have a driver before groups still looking for one
+      const groupA = isTravelGroup(a.ride) ? 1 : 0
+      const groupB = isTravelGroup(b.ride) ? 1 : 0
+      if (groupA !== groupB) return groupA - groupB
       return rideDateTime(a.ride).getTime() - rideDateTime(b.ride).getTime()
     })
+}
+
+// Plain-language reason shown on the best match
+export function recommendationFor(match: RideMatch): string {
+  const people = peopleOnBoard(match.ride)
+  const similarTime = match.minutesFromWanted !== null && Math.abs(match.minutesFromWanted) <= 60
+  if (people >= 2) {
+    return `${people} students are already travelling${similarTime ? ' at a similar time' : ' on this route'}. Joining helps fill this ride.`
+  }
+  return similarTime ? 'Closest to your route and time.' : 'Closest to your route.'
 }
 
 export function placeFromRide(ride: Ride, end: 'origin' | 'destination'): Place {

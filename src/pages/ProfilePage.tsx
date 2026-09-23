@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { StudentStats, fetchStudentStats } from '../lib/rides'
 import { LogOut, User, Mail, Badge, GraduationCap, Pencil } from 'lucide-react'
 
 export function ProfilePage() {
@@ -11,6 +12,11 @@ export function ProfilePage() {
   const [nameInput, setNameInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
+  const [stats, setStats] = useState<StudentStats | null>(null)
+
+  useEffect(() => {
+    if (user) fetchStudentStats(user.id).then(setStats)
+  }, [user])
 
   const name = user?.user_metadata?.name
   const course = user?.user_metadata?.course
@@ -147,6 +153,28 @@ export function ProfilePage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Travel record (facts only, no ratings) */}
+      <div className="mb-8 rounded-lg bg-white p-6 shadow-md">
+        <h3 className="mb-4 text-lg font-semibold text-secondary-900">My travel record</h3>
+        <div className="grid grid-cols-3 divide-x divide-secondary-200 text-center">
+          <div>
+            <p className="text-2xl font-bold text-secondary-900">{stats?.completed_trips ?? '–'}</p>
+            <p className="text-xs text-secondary-500">Completed trips</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-secondary-900">{stats?.cancelled_trips ?? '–'}</p>
+            <p className="text-xs text-secondary-500">Cancelled trips</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-secondary-900">{stats?.last_minute_cancellations ?? '–'}</p>
+            <p className="text-xs text-secondary-500">Last-minute cancellations</p>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-secondary-500">
+          Ride posters see these numbers when you ask to join, so leaving early rather than last-minute helps.
+        </p>
       </div>
 
       {/* Account Settings */}

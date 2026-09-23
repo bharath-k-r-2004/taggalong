@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { RideCard } from '../components/RideCard'
 import { Ride, fetchMyRides, isUpcoming, myParticipation, rideDateTime } from '../lib/rides'
 
-type Tab = 'upcoming' | 'past'
+type Tab = 'upcoming' | 'completed' | 'cancelled'
 
 export function MyTripsPage() {
   const { user } = useAuth()
@@ -22,11 +22,25 @@ export function MyTripsPage() {
       .finally(() => setLoading(false))
   }, [user])
 
-  const upcoming = rides.filter(isUpcoming)
-  const past = rides
-    .filter(r => !isUpcoming(r))
+  // Which tab a trip belongs to, from my point of view
+  const bucket = (r: Ride): Tab | null => {
+    const mineP = myParticipation(r, user?.id)
+    const isPoster = r.creator_id === user?.id
+    if (r.status === 'cancelled' || mineP?.status === 'cancelled') return 'cancelled'
+    if (isUpcoming(r)) return mineP?.status === 'declined' ? null : 'upcoming'
+    // past trips count as completed only if I was actually on them (and a driver was arranged)
+    if (r.status === 'looking') return null
+    return isPoster || mineP?.status === 'accepted' ? 'completed' : null
+  }
+  const upcoming = rides.filter(r => bucket(r) === 'upcoming')
+  const completed = rides
+    .filter(r => bucket(r) === 'completed')
     .sort((a, b) => rideDateTime(b).getTime() - rideDateTime(a).getTime())
-  const list = tab === 'upcoming' ? upcoming : past
+  const cancelled = rides
+    .filter(r => bucket(r) === 'cancelled')
+    .sort((a, b) => rideDateTime(b).getTime() - rideDateTime(a).getTime())
+  const counts: Record<Tab, number> = { upcoming: upcoming.length, completed: completed.length, cancelled: cancelled.length }
+  const list = tab === 'upcoming' ? upcoming : tab === 'completed' ? completed : cancelled
 
   const posted = list.filter(r => r.creator_id === user?.id)
   const joined = list.filter(r => r.creator_id !== user?.id && myParticipation(r, user?.id))
@@ -36,7 +50,7 @@ export function MyTripsPage() {
       <h1 className="mb-4 text-2xl font-bold text-secondary-900">My trips</h1>
 
       <div className="mb-6 inline-flex rounded-xl bg-secondary-100 p-1">
-        {(['upcoming', 'past'] as Tab[]).map(t => (
+        {(['upcoming', 'completed', 'cancelled'] as Tab[]).map(t => (
           <button
             key={t}
             type="button"
@@ -45,7 +59,7 @@ export function MyTripsPage() {
               tab === t ? 'bg-white text-secondary-900 shadow-sm' : 'text-secondary-600'
             }`}
           >
-            {t} ({t === 'upcoming' ? upcoming.length : past.length})
+            {t} ({counts[t]})
           </button>
         ))}
       </div>
@@ -58,7 +72,9 @@ export function MyTripsPage() {
         </div>
       ) : list.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-secondary-300 bg-white px-4 py-10 text-center">
-          <p className="text-secondary-700">{tab === 'upcoming' ? 'No upcoming trips.' : 'No past trips yet.'}</p>
+          <p className="text-secondary-700">
+            {tab === 'upcoming' ? 'No upcoming trips.' : tab === 'completed' ? 'No completed trips yet.' : 'No cancelled trips.'}
+          </p>
           {tab === 'upcoming' && (
             <div className="mt-4 flex justify-center gap-3">
               <button

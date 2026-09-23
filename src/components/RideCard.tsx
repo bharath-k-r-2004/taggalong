@@ -1,10 +1,13 @@
 import { useNavigate } from 'react-router-dom'
-import { Car, Users } from 'lucide-react'
+import { Car, Star, Users } from 'lucide-react'
 import {
   Ride,
   formatDateLabel,
   formatTimeGap,
   formatRupees,
+  hasFare,
+  isTravelGroup,
+  peopleOnBoard,
   formatTime,
   myParticipation,
   pendingRequests,
@@ -18,9 +21,10 @@ interface RideCardProps {
   pickupKm?: number | null
   dropKm?: number | null
   minutesFromWanted?: number | null
+  recommendation?: string // shown as "Best match" on the top result
 }
 
-export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted }: RideCardProps) {
+export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, recommendation }: RideCardProps) {
   const navigate = useNavigate()
   const left = seatsLeft(ride)
   const isMine = ride.creator_id === userId
@@ -33,6 +37,9 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted }: 
   else if (mine?.status === 'accepted') badge = { text: "You're in", className: 'bg-primary-100 text-primary-700' }
   else if (mine?.status === 'requested') badge = { text: 'Requested', className: 'bg-amber-100 text-amber-800' }
   else if (mine?.status === 'declined') badge = { text: 'Declined', className: 'bg-secondary-100 text-secondary-600' }
+  else if (mine?.status === 'cancelled') badge = { text: 'You cancelled', className: 'bg-secondary-100 text-secondary-600' }
+  const group = isTravelGroup(ride)
+  const onBoard = peopleOnBoard(ride)
 
   const hints: string[] = []
   if (minutesFromWanted != null) hints.push(formatTimeGap(minutesFromWanted))
@@ -43,16 +50,35 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted }: 
     <button
       type="button"
       onClick={() => navigate(`/ride/${ride.id}`)}
-      className="w-full rounded-2xl border border-secondary-200 bg-white p-4 text-left shadow-sm transition hover:border-primary-300 hover:shadow-md"
+      className={`w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-primary-300 hover:shadow-md ${
+        recommendation ? 'border-primary-300 ring-1 ring-primary-100' : 'border-secondary-200'
+      }`}
     >
+      {recommendation && (
+        <div className="-mx-4 -mt-4 mb-3 rounded-t-2xl bg-primary-50 px-4 py-2">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-primary-800">
+            <Star size={14} className="fill-primary-600 text-primary-600" /> Best match
+          </p>
+          <p className="text-xs text-primary-700">{recommendation}</p>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-lg font-bold text-secondary-900">{formatTime(ride.departure_time)}</p>
           <p className="text-sm text-secondary-500">{formatDateLabel(ride.date)}</p>
         </div>
         <div className="text-right">
-          <p className="text-lg font-bold text-secondary-900">{formatRupees(shareWhenFull(ride))}</p>
-          <p className="text-xs text-secondary-500">per person when full</p>
+          {hasFare(ride) ? (
+            <>
+              <p className="text-lg font-bold text-secondary-900">{formatRupees(shareWhenFull(ride))}</p>
+              <p className="text-xs text-secondary-500">per person when full</p>
+            </>
+          ) : (
+            <>
+              <p className="text-lg font-bold text-secondary-500">Fare TBD</p>
+              <p className="text-xs text-secondary-500">split once a driver is added</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -72,6 +98,9 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted }: 
       {hints.length > 0 && <p className="mt-2 text-xs text-primary-700">{hints.join(' · ')}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        {group && ride.status !== 'cancelled' && (
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800">Looking for a driver</span>
+        )}
         {badge && <span className={`rounded-full px-2.5 py-1 font-semibold ${badge.className}`}>{badge.text}</span>}
         {pending > 0 && (
           <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800">
@@ -85,7 +114,7 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted }: 
             }`}
           >
             <Users size={12} />
-            {left > 0 ? `${left} seat${left > 1 ? 's' : ''} left` : 'Full'}
+            {onBoard}/{ride.max_seats} going · {left > 0 ? `${left} seat${left > 1 ? 's' : ''} left` : 'Full'}
           </span>
         )}
         {ride.vehicle_type && (

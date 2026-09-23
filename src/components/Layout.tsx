@@ -1,10 +1,11 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
-import { Home, MapPin, PlusCircle, Search, User } from 'lucide-react'
+import { Home, MapPin, PlusCircle, Search, User, UserCheck } from 'lucide-react'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Home', icon: Home },
   { path: '/search', label: 'Find', icon: Search },
   { path: '/create-ride', label: 'Offer', icon: PlusCircle },
+  { path: '/drivers', label: 'Drivers', icon: UserCheck },
   { path: '/trips', label: 'My Trips', icon: MapPin },
   { path: '/profile', label: 'Profile', icon: User }
 ]

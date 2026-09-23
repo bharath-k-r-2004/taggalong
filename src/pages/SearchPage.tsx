@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowUpDown, CalendarDays, Clock, Plus, RefreshCw } from 'lucide-react'
+import { ArrowUpDown, CalendarDays, Clock, Plus, RefreshCw, Users } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { LocationInput } from '../components/LocationInput'
 import { RideCard } from '../components/RideCard'
 import { Place } from '../lib/places'
-import { Ride, fetchUpcomingRides, matchRides, todayString } from '../lib/rides'
+import { Ride, fetchUpcomingRides, matchRides, recommendationFor, todayString } from '../lib/rides'
 
 interface SearchState {
   from?: Place | null
@@ -210,21 +210,34 @@ export function SearchPage() {
                 <p className="mt-1 text-sm text-secondary-500">
                   Post it yourself and other students can join you.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => navigate('/create-ride', { state: { from, to, date, time } })}
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 font-semibold text-white hover:bg-primary-700"
-                >
-                  <Plus size={18} />
-                  Post this ride
-                </button>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/create-ride', { state: { from, to, date, time } })}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 font-semibold text-white hover:bg-primary-700"
+                  >
+                    <Plus size={18} />
+                    Post this ride
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate('/create-ride', { state: { from, to, date, time, mode: 'group', flex: flexMinutes } })
+                    }
+                    className="inline-flex items-center gap-2 rounded-xl border border-secondary-300 bg-white px-4 py-2.5 font-semibold text-secondary-800 hover:bg-secondary-50"
+                  >
+                    <Users size={18} />
+                    No driver? Find travellers first
+                  </button>
+                </div>
               </div>
             )}
 
             <div className="space-y-3">
-              {matches.map(m => (
+              {matches.map((m, i) => (
                 <RideCard
                   key={m.ride.id}
+                  recommendation={filtering && i === 0 && matches.length > 1 ? recommendationFor(m) : undefined}
                   ride={m.ride}
                   userId={user?.id}
                   pickupKm={m.pickupKm}
