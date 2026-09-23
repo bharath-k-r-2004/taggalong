@@ -120,7 +120,7 @@ export function RideDetailsPage() {
           status: 'requested',
           contribution_amount: Math.ceil(shareIfYouJoin(ride))
         }),
-      'Request sent! You will see the contact details once the poster accepts.'
+      "Request sent! You'll see the driver's number once the poster accepts."
     )
 
   const withdraw = (p: Participant, leaving: boolean) => {
@@ -312,22 +312,27 @@ export function RideDetailsPage() {
         )}
 
         {canSeeContact && (
+          <p className="-mb-2 text-xs uppercase tracking-wide text-secondary-500">
+            Driver{ride.driver_name ? ` · ${ride.driver_name}` : ''} · +91 {contact}
+          </p>
+        )}
+        {canSeeContact && (
           <div className="flex gap-2 pt-1">
             <a
               href={`tel:+91${contact}`}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-secondary-300 py-2.5 font-semibold text-secondary-800 hover:bg-secondary-50"
             >
               <Phone size={18} />
-              Call
+              Call driver
             </a>
             <a
-              href={`https://wa.me/91${contact}?text=${encodeURIComponent(`Hi! About the TagAlong ride ${ride.origin} → ${ride.destination} on ${formatDateLabel(ride.date)}`)}`}
+              href={`https://wa.me/91${contact}?text=${encodeURIComponent(`Hi, I'm a passenger for the ride from ${ride.origin} to ${ride.destination} on ${formatDateLabel(ride.date)} at ${formatTime(ride.departure_time)}.`)}`}
               target="_blank"
               rel="noreferrer"
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#25D366] py-2.5 font-semibold text-white hover:opacity-90"
             >
               <MessageCircle size={18} />
-              WhatsApp
+              WhatsApp driver
             </a>
           </div>
         )}
@@ -383,7 +388,7 @@ export function RideDetailsPage() {
         ) : mine?.status === 'accepted' ? (
           <div className="rounded-xl bg-primary-600 p-4 text-white shadow-md">
             <p className="font-semibold">You're in! 🎉</p>
-            <p className="text-sm text-primary-100">Contact the poster above to coordinate the pickup.</p>
+            <p className="text-sm text-primary-100">Call or WhatsApp the driver above to confirm the pickup.</p>
             {upcoming && (
               <button type="button" disabled={busy} onClick={() => withdraw(mine, true)} className="mt-2 text-sm underline">
                 Leave ride
@@ -394,7 +399,7 @@ export function RideDetailsPage() {
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
             <p className="font-semibold text-amber-900">Request sent</p>
             <p className="text-sm text-amber-800">
-              Waiting for {ride.creator?.name || 'the poster'} to accept. Their contact appears here once they do.
+              Waiting for {ride.creator?.name || 'the poster'} to accept. The driver's number appears here once they do.
             </p>
             <button
               type="button"

@@ -49,7 +49,7 @@ export function CreateRidePage() {
     if (new Date(y, m - 1, d, hh, mm).getTime() < Date.now() - 5 * 60 * 1000) return 'The departure time has already passed.'
     if (!(cost > 0)) return 'Please enter the total fare for the ride.'
     const digits = phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '')
-    if (!/^[6-9]\d{9}$/.test(digits)) return 'Please enter a valid 10-digit mobile number.'
+    if (!/^[6-9]\d{9}$/.test(digits)) return "Please enter the driver's 10-digit mobile number."
     return null
   }
 
@@ -221,12 +221,12 @@ export function CreateRidePage() {
                 type="text"
                 value={driverName}
                 onChange={e => setDriverName(e.target.value)}
-                placeholder="Leave blank if you drive"
+                placeholder="e.g. Ramesh (or your name if you drive)"
                 className="!rounded-xl"
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-secondary-700">Contact number</label>
+              <label className="mb-1 block text-sm font-medium text-secondary-700">Driver's number</label>
               <input
                 type="tel"
                 inputMode="numeric"
@@ -239,7 +239,7 @@ export function CreateRidePage() {
             </div>
           </div>
           <p className="text-xs text-secondary-500">
-            Your contact number is shown only to students whose request you accept.
+            The driver's number is shown only to you and the students whose request you accept. Driving yourself? Enter your own number.
           </p>
           <div>
             <label className="mb-1 block text-sm font-medium text-secondary-700">
