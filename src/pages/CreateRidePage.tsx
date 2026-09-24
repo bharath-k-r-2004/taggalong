@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { LocationInput } from '../components/LocationInput'
 import { DriverPicker } from '../components/DriverPicker'
 import { Place } from '../lib/places'
-import { FLEXIBILITY_OPTIONS, formatRupees, todayString } from '../lib/rides'
+import { FLEXIBILITY_OPTIONS, formatDateLabel, formatRupees, formatTime, todayString } from '../lib/rides'
 import { RELATIONSHIPS, RankedDriver, addDriver, recordQuote } from '../lib/drivers'
 
 const VEHICLES = ['Cab (Sedan)', 'Cab (SUV)', 'Cab (Hatchback)', 'Own car', 'Auto', 'Other']
@@ -21,6 +21,13 @@ interface Prefill {
   mode?: Mode
   driverId?: string // chosen on a driver's profile
   convertRideId?: string // a travel group getting its driver
+  editRideId?: string // the poster changing an existing ride
+  fare?: number | null
+  toll?: boolean | null
+  vehicleType?: string | null
+  vehicleNumber?: string | null
+  driverName?: string | null
+  phone?: string | null
   seats?: number
   onBoard?: number
   flex?: number | null
@@ -32,6 +39,8 @@ export function CreateRidePage() {
   const navigate = useNavigate()
   const prefill = (useLocation().state as Prefill | null) || {}
   const converting = Boolean(prefill.convertRideId)
+  const editing = Boolean(prefill.editRideId)
+  const updating = converting || editing
   const minSeats = Math.max(2, prefill.onBoard || 1)
 
   const [mode, setMode] = useState<Mode>(converting ? 'driver' : prefill.mode || 'driver')
@@ -40,13 +49,13 @@ export function CreateRidePage() {
   const [date, setDate] = useState(prefill.date || todayString())
   const [time, setTime] = useState(prefill.time || '')
   const [flex, setFlex] = useState<number | null>(prefill.flex !== undefined ? prefill.flex : 30)
-  const [totalCost, setTotalCost] = useState('')
-  const [toll, setToll] = useState<boolean | null>(null)
+  const [totalCost, setTotalCost] = useState(prefill.fare ? String(Math.round(Number(prefill.fare))) : '')
+  const [toll, setToll] = useState<boolean | null>(prefill.toll ?? null)
   const [seats, setSeats] = useState(String(Math.max(prefill.seats || 4, minSeats)))
-  const [vehicleType, setVehicleType] = useState(VEHICLES[0])
-  const [vehicleNumber, setVehicleNumber] = useState('')
-  const [driverName, setDriverName] = useState('')
-  const [phone, setPhone] = useState('')
+  const [vehicleType, setVehicleType] = useState(prefill.vehicleType || VEHICLES[0])
+  const [vehicleNumber, setVehicleNumber] = useState(prefill.vehicleNumber || '')
+  const [driverName, setDriverName] = useState(prefill.driverName || '')
+  const [phone, setPhone] = useState(prefill.phone || '')
   const [notes, setNotes] = useState(prefill.notes || '')
   const [picked, setPicked] = useState<RankedDriver | null>(null)
   const [quoteNote, setQuoteNote] = useState<string | null>(null)
@@ -55,6 +64,8 @@ export function CreateRidePage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const phoneDigits = phone.replace(/\D/g, '').slice(-10)
+  const keptDriverId = editing && prefill.driverId && phoneDigits === (prefill.phone || '') ? prefill.driverId : null
   const cost = Number(totalCost)
   const seatCount = Number(seats)
   const perPerson = cost > 0 && seatCount > 0 ? cost / seatCount : null
@@ -71,7 +82,7 @@ export function CreateRidePage() {
     if (d.vehicle_type) setVehicleType(d.vehicle_type)
     setVehicleNumber(d.vehicle_number || '')
     if (d.seats) setSeats(String(Math.min(7, Math.max(minSeats, d.seats))))
-    if (item.routeQuote) {
+    if (item.routeQuote && !editing) {
       setTotalCost(String(Math.round(Number(item.routeQuote.quoted_price))))
       setToll(item.routeQuote.toll_included)
       const when = new Date(item.routeQuote.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
@@ -94,6 +105,20 @@ export function CreateRidePage() {
     if (!picked && saveToDirectory && driverName.trim().length < 2)
       return "Please add the driver's name so other students can find them in the directory."
     return null
+  }
+
+  // After an edit, riders who already joined get a note in the ride chat
+  const announceChange = async (rideId: string) => {
+    if (!user || (prefill.onBoard || 1) < 2) return
+    const fare = mode === 'driver' && cost > 0 ? `, total fare ${formatRupees(cost)}` : ''
+    await supabase
+      .from('messages')
+      .insert({
+        ride_id: rideId,
+        user_id: user.id,
+        content: `📝 I updated the ride: ${formatDateLabel(date)} at ${formatTime(time)}${fare}. Please check the details.`
+      })
+      .then(({ error: chatError }) => chatError && console.error('Chat note not sent:', chatError))
   }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -124,6 +149,15 @@ export function CreateRidePage() {
         notes: notes.trim() || null
       }
 
+      // Editing a travel group: only trip details change
+      if (mode === 'group' && editing && prefill.editRideId) {
+        const { error: updateError } = await supabase.from('rides').update(route).eq('id', prefill.editRideId)
+        if (updateError) throw updateError
+        await announceChange(prefill.editRideId)
+        navigate(`/ride/${prefill.editRideId}`, { replace: true, state: { justPosted: 'edited' } })
+        return
+      }
+
       // "Find travellers first": a travel group with no driver or fare yet
       if (mode === 'group') {
         const { data, error: insertError } = await supabase
@@ -137,7 +171,7 @@ export function CreateRidePage() {
       }
 
       // Save a new driver to the community directory (or reuse the listed one)
-      let driverId = picked?.driver.id || null
+      let driverId = picked?.driver.id || keptDriverId || null
       if (!driverId && saveToDirectory) {
         const result = await addDriver({
           userId: user.id,
@@ -163,7 +197,11 @@ export function CreateRidePage() {
       }
 
       let rideId: string
-      if (converting && prefill.convertRideId) {
+      if (editing && prefill.editRideId) {
+        const { error: updateError } = await supabase.from('rides').update(rideFields).eq('id', prefill.editRideId)
+        if (updateError) throw updateError
+        rideId = prefill.editRideId
+      } else if (converting && prefill.convertRideId) {
         const { error: updateError } = await supabase
           .from('rides')
           .update({ ...rideFields, status: (prefill.onBoard || 1) >= seatCount ? 'full' : 'open' })
@@ -180,14 +218,19 @@ export function CreateRidePage() {
         rideId = data.id
       }
 
-      // Every ride adds a route price to the driver's history
-      if (driverId) {
+      // Every ride adds a route price to the driver's history (edits only if the price or driver changed)
+      const priceChanged = !editing || cost !== Number(prefill.fare) || driverId !== (prefill.driverId || null)
+      if (driverId && priceChanged) {
         await recordQuote({ driverId, userId: user.id, from, to, price: cost, tollIncluded: toll, rideId }).catch(err =>
           console.error('Quote not recorded:', err)
         )
       }
 
-      navigate(`/ride/${rideId}`, { replace: true, state: { justPosted: converting ? 'converted' : 'ride' } })
+      if (editing) await announceChange(rideId)
+      navigate(`/ride/${rideId}`, {
+        replace: true,
+        state: { justPosted: editing ? 'edited' : converting ? 'converted' : 'ride' }
+      })
     } catch (err) {
       console.error('Create ride error:', err)
       setError(err instanceof Error ? err.message : 'Could not post the ride. Please try again.')
@@ -201,10 +244,12 @@ export function CreateRidePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="text-2xl font-bold text-secondary-900">
-        {converting ? 'Add a driver to your group' : mode === 'group' ? 'Find travellers first' : 'Post a ride'}
+        {editing ? 'Edit ride' : converting ? 'Add a driver to your group' : mode === 'group' ? 'Find travellers first' : 'Post a ride'}
       </h1>
       <p className="mb-6 text-secondary-600">
-        {converting
+        {editing
+          ? 'Students who already joined will see the new details, and get a note in the ride chat.'
+          : converting
           ? 'Your group becomes a ride with a driver and fare that members can see.'
           : mode === 'group'
           ? "No driver yet? Post your trip, gather students going the same way, then pick a driver together."
@@ -212,7 +257,7 @@ export function CreateRidePage() {
       </p>
 
       {/* Do you have a driver? */}
-      {!converting && (
+      {!updating && (
         <div className="mb-5 grid grid-cols-2 gap-3">
           {[
             { value: 'driver' as Mode, icon: Car, title: 'I have a driver', text: 'Share the ride and split the fare' },
@@ -305,11 +350,13 @@ export function CreateRidePage() {
             <div>
               <label className="mb-1 block text-sm font-medium text-secondary-700">Group size you're aiming for</label>
               <select value={seats} onChange={e => setSeats(e.target.value)} className="!rounded-xl !py-2.5">
-                {[2, 3, 4, 5, 6, 7].map(n => (
-                  <option key={n} value={n}>
-                    {n} people (incl. you)
-                  </option>
-                ))}
+                {[2, 3, 4, 5, 6, 7]
+                  .filter(n => n >= minSeats)
+                  .map(n => (
+                    <option key={n} value={n}>
+                      {n} people (incl. you)
+                    </option>
+                  ))}
               </select>
             </div>
             <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -344,7 +391,7 @@ export function CreateRidePage() {
                 userId={user?.id}
                 selectedId={picked?.driver.id || null}
                 onSelect={pickDriver}
-                preselectId={prefill.driverId || null}
+                preselectId={editing ? null : prefill.driverId || null}
                 date={date}
                 time={time}
               />
@@ -464,7 +511,7 @@ export function CreateRidePage() {
               </p>
 
               {/* New driver: offer to add them to the community directory */}
-              {!picked && (
+              {!picked && !keptDriverId && (
                 <div className="space-y-2 rounded-xl bg-secondary-50 p-3">
                   <label className="flex items-start gap-2 text-sm text-secondary-800">
                     <input
@@ -514,7 +561,15 @@ export function CreateRidePage() {
           disabled={saving}
           className="w-full rounded-xl bg-primary-600 py-3.5 text-lg font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:opacity-50"
         >
-          {saving ? 'Posting...' : converting ? 'Save driver & update ride' : mode === 'group' ? 'Post & find travellers' : 'Post ride'}
+          {saving
+            ? 'Saving...'
+            : editing
+            ? 'Save changes'
+            : converting
+            ? 'Save driver & update ride'
+            : mode === 'group'
+            ? 'Post & find travellers'
+            : 'Post ride'}
         </button>
       </form>
     </div>

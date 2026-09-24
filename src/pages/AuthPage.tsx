@@ -13,7 +13,12 @@ export function AuthPage() {
   const { error: authError, clearError } = useAuth()
 
   // Errors can come from: this page, the shared login state, or the Google callback
-  const callbackError = (location.state as { authError?: string } | null)?.authError
+  const rawCallbackError = (location.state as { authError?: string } | null)?.authError
+  // The database refuses non-IIM sign-ups; Supabase reports that as a generic database error
+  const callbackError =
+    rawCallbackError && /database error saving new user|iimrohtak/i.test(rawCallbackError)
+      ? 'Only @iimrohtak.ac.in Google accounts can use TagAlong. Please choose your IIM Rohtak account.'
+      : rawCallbackError
   const error = localError || authError || callbackError || null
 
   const handleGoogleSignIn = async () => {

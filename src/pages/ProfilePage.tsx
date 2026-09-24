@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { StudentStats, fetchStudentStats } from '../lib/rides'
 import { LogOut, User, Mail, Badge, GraduationCap, Pencil } from 'lucide-react'
@@ -13,9 +14,11 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
   const [stats, setStats] = useState<StudentStats | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     if (user) fetchStudentStats(user.id).then(setStats)
+    supabase.rpc('is_admin').then(({ data }) => setIsAdmin(Boolean(data)))
   }, [user])
 
   const name = user?.user_metadata?.name
@@ -176,6 +179,16 @@ export function ProfilePage() {
           Ride posters see these numbers when you ask to join, so leaving early rather than last-minute helps.
         </p>
       </div>
+
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={() => navigate('/admin')}
+          className="mb-8 w-full rounded-lg border border-primary-600 bg-primary-50 py-3 font-semibold text-primary-700 hover:bg-primary-100"
+        >
+          Open admin dashboard
+        </button>
+      )}
 
       {/* Account Settings */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-8">

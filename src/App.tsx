@@ -13,6 +13,7 @@ import { RideDetailsPage } from './pages/RideDetailsPage'
 import { DriversPage } from './pages/DriversPage'
 import { DriverProfilePage } from './pages/DriverProfilePage'
 import { AddDriverPage } from './pages/AddDriverPage'
+import { AdminPage } from './pages/AdminPage'
 
 function AppContent() {
   const { user, loading } = useAuth()
@@ -49,6 +50,7 @@ function AppContent() {
           <Route path="/drivers/new" element={<AddDriverPage />} />
           <Route path="/drivers/:id" element={<DriverProfilePage />} />
           <Route path="/trips" element={<MyTripsPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   Car,
   Check,
+  Pencil,
   ChevronLeft,
   Clock,
   HeartHandshake,
@@ -52,7 +53,8 @@ function personLabel(p?: { name: string | null; course: string | null; batch: st
 const POSTED_MESSAGES: Record<string, string> = {
   ride: 'Ride posted! It is now visible to IIM Rohtak students travelling your way.',
   group: 'Travel request posted! Students going your way can now join your group.',
-  converted: 'Driver added. Your group is now a ride and the fare will be split automatically.'
+  converted: 'Driver added. Your group is now a ride and the fare will be split automatically.',
+  edited: 'Changes saved. Everyone on the ride can see the new details.'
 }
 
 export function RideDetailsPage() {
@@ -218,6 +220,29 @@ export function RideDetailsPage() {
         onBoard,
         flex: ride.time_flexibility,
         notes: ride.notes
+      }
+    })
+
+  const editRide = () =>
+    navigate('/create-ride', {
+      state: {
+        editRideId: ride.id,
+        mode: group ? 'group' : 'driver',
+        from: placeFromRide(ride, 'origin'),
+        to: placeFromRide(ride, 'destination'),
+        date: ride.date,
+        time: ride.departure_time.slice(0, 5),
+        seats: ride.max_seats,
+        onBoard,
+        flex: ride.time_flexibility,
+        notes: ride.notes,
+        fare: ride.total_cost,
+        toll: ride.toll_included,
+        vehicleType: ride.vehicle_type,
+        vehicleNumber: ride.vehicle_number,
+        driverName: ride.driver_name,
+        driverId: ride.driver_id,
+        phone: contact
       }
     })
 
@@ -589,15 +614,39 @@ export function RideDetailsPage() {
           cancelPanel
         ) : isCreator ? (
           active && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setCancelOpen('ride')}
-              className="w-full rounded-xl border border-red-200 bg-white py-3 font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-50"
-            >
-              Cancel ride
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={editRide}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-secondary-300 bg-white py-3 font-semibold text-secondary-800 shadow-sm hover:bg-secondary-50 disabled:opacity-50"
+              >
+                <Pencil size={16} /> Edit ride
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setCancelOpen('ride')}
+                className="flex-1 rounded-xl border border-red-200 bg-white py-3 font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-50"
+              >
+                Cancel ride
+              </button>
+            </div>
           )
+        ) : ride.status === 'cancelled' ? (
+          mine && (
+            <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">
+              This ride was cancelled by the poster. Look for another ride going your way.
+            </div>
+          )
+        ) : !upcoming ? (
+          mine?.status === 'accepted' ? (
+            <div className="rounded-xl bg-primary-50 p-4 text-sm text-primary-800">This trip has finished. Hope it went well!</div>
+          ) : mine?.status === 'requested' ? (
+            <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">
+              The ride left before your request was accepted.
+            </div>
+          ) : null
         ) : mine?.status === 'accepted' ? (
           <div className="rounded-xl bg-primary-600 p-4 text-white shadow-md">
             <p className="font-semibold">You're in! 🎉</p>
