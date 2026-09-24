@@ -57,7 +57,8 @@ export const RIDE_SELECT =
   'date, departure_time, total_cost, max_seats, current_participants, driver_name, vehicle_type, ' +
   'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ' +
   'creator:users(name, course, batch), ' +
-  'ride_participants(id, user_id, status, message, joined_at, withdrawn_for, user:users(name, course, batch))'
+  // "!ride_id" names the exact link to follow, so extra links can never confuse the API
+  'ride_participants!ride_id(id, user_id, status, message, joined_at, withdrawn_for, user:users(name, course, batch))'
 
 // ---------- dates & times ----------
 
@@ -211,7 +212,7 @@ export interface ConfirmedRide {
 export async function fetchMyConfirmedRides(userId: string): Promise<ConfirmedRide[]> {
   const { data, error } = await supabase
     .from('ride_participants')
-    .select('ride:rides(id, date, departure_time, origin, destination, status)')
+    .select('ride:rides!ride_id(id, date, departure_time, origin, destination, status)')
     .eq('user_id', userId)
     .eq('status', 'accepted')
   if (error) return []
@@ -253,7 +254,7 @@ export async function fetchRideContact(rideId: string): Promise<string | null> {
 export async function fetchMyRides(userId: string): Promise<Ride[]> {
   const [posted, joined] = await Promise.all([
     supabase.from('rides').select(RIDE_SELECT).eq('creator_id', userId),
-    supabase.from('ride_participants').select(`ride:rides(${RIDE_SELECT})`).eq('user_id', userId)
+    supabase.from('ride_participants').select(`ride:rides!ride_id(${RIDE_SELECT})`).eq('user_id', userId)
   ])
   if (posted.error) throw posted.error
   if (joined.error) throw joined.error
