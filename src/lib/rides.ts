@@ -223,6 +223,11 @@ export async function fetchMyConfirmedRides(userId: string): Promise<ConfirmedRi
 
 // ---------- queries ----------
 
+// Rides that can still be joined (departure time not reached)
+export function isJoinable(ride: Ride): boolean {
+  return isUpcoming(ride) && rideDateTime(ride).getTime() > Date.now()
+}
+
 export async function fetchUpcomingRides(): Promise<Ride[]> {
   const { data, error } = await supabase
     .from('rides')

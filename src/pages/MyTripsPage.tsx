@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { friendlyError } from '../lib/errors'
 import { RideCard } from '../components/RideCard'
 import { Ride, fetchMyRides, isUpcoming, myParticipation, rideDateTime } from '../lib/rides'
 
@@ -18,7 +19,7 @@ export function MyTripsPage() {
     if (!user) return
     fetchMyRides(user.id)
       .then(setRides)
-      .catch(err => setError(err.message || 'Could not load your trips'))
+      .catch(err => setError(friendlyError(err)))
       .finally(() => setLoading(false))
   }, [user])
 

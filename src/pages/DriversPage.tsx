@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, Clock, Plus, Search } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { friendlyError } from '../lib/errors'
 import { LocationInput } from '../components/LocationInput'
 import { DriverCard } from '../components/DriverCard'
 import { Place } from '../lib/places'
@@ -45,7 +46,7 @@ export function DriversPage() {
         setQuotes(q)
         setBookings(b)
       })
-      .catch(err => setError(err.message || 'Could not load drivers'))
+      .catch(err => setError(friendlyError(err)))
       .finally(() => setLoading(false))
   }, [])
 

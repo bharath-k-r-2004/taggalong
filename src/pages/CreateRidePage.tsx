@@ -8,6 +8,7 @@ import { DriverPicker } from '../components/DriverPicker'
 import { Place } from '../lib/places'
 import { FLEXIBILITY_OPTIONS, formatDateLabel, formatRupees, formatTime, todayString } from '../lib/rides'
 import { RELATIONSHIPS, RankedDriver, addDriver, recordQuote } from '../lib/drivers'
+import { friendlyError } from '../lib/errors'
 
 const VEHICLES = ['Cab (Sedan)', 'Cab (SUV)', 'Cab (Hatchback)', 'Own car', 'Auto', 'Other']
 
@@ -100,6 +101,7 @@ export function CreateRidePage() {
     if (new Date(y, m - 1, d, hh, mm).getTime() < Date.now() - 5 * 60 * 1000) return 'The departure time has already passed.'
     if (mode === 'group') return null
     if (!(cost > 0)) return 'Please enter the total fare for the ride.'
+    if (cost > 100000) return 'Please enter a total fare between ₹1 and ₹1,00,000.'
     const digits = phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '')
     if (!/^[6-9]\d{9}$/.test(digits)) return "Please enter the driver's 10-digit mobile number."
     if (!picked && saveToDirectory && driverName.trim().length < 2)
@@ -233,7 +235,7 @@ export function CreateRidePage() {
       })
     } catch (err) {
       console.error('Create ride error:', err)
-      setError(err instanceof Error ? err.message : 'Could not post the ride. Please try again.')
+      setError(friendlyError(err))
       setSaving(false)
     }
   }

@@ -19,6 +19,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { RideChat } from '../components/RideChat'
 import { Driver, fetchDrivers } from '../lib/drivers'
+import { friendlyError } from '../lib/errors'
 import {
   CANCEL_REASONS,
   Participant,
@@ -40,6 +41,7 @@ import {
   myParticipation,
   peopleOnBoard,
   placeFromRide,
+  rideDateTime,
   ridesClash,
   seatsLeft,
   shareIfYouJoin,
@@ -132,7 +134,13 @@ export function RideDetailsPage() {
       setNotice(success)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      const message = friendlyError(
+        err,
+        "This ride isn't taking requests any more. It may have just filled up, been cancelled or left. The page now shows the latest."
+      )
+      setNotice(null)
+      await load() // show what changed (e.g. the ride is now full)
+      setError(message) // after the refresh, so the refresh doesn't clear it
     } finally {
       setBusy(false)
     }
@@ -158,8 +166,9 @@ export function RideDetailsPage() {
   }
 
   const mine = myParticipation(ride, user?.id)
-  const upcoming = isUpcoming(ride)
-  const active = upcoming && ride.status !== 'cancelled'
+  const upcoming = isUpcoming(ride) // still shown to its members for 30 minutes after leaving
+  const departed = rideDateTime(ride).getTime() <= Date.now()
+  const active = !departed && ride.status !== 'cancelled' // requests, edits, leaving and cancelling
   const group = isTravelGroup(ride)
   const left = seatsLeft(ride)
   const onBoard = peopleOnBoard(ride)
@@ -340,8 +349,10 @@ export function RideDetailsPage() {
           This ride was cancelled{ride.cancel_reason ? ` (${ride.cancel_reason.toLowerCase()})` : ''}.
         </div>
       )}
-      {ride.status !== 'cancelled' && !upcoming && (
-        <div className="mb-3 rounded-xl bg-secondary-100 px-4 py-3 text-sm text-secondary-700">This ride has already left.</div>
+      {ride.status !== 'cancelled' && departed && (
+        <div className="mb-3 rounded-xl bg-secondary-100 px-4 py-3 text-sm text-secondary-700">
+          This ride has already left (at {formatTime(ride.departure_time)}).
+        </div>
       )}
 
       {/* Travel group banner */}
@@ -658,7 +669,7 @@ export function RideDetailsPage() {
               This ride was cancelled by the poster. Look for another ride going your way.
             </div>
           )
-        ) : !upcoming ? (
+        ) : departed ? (
           mine?.status === 'accepted' ? (
             <div className="rounded-xl bg-primary-50 p-4 text-sm text-primary-800">This trip has finished. Hope it went well!</div>
           ) : mine?.status === 'requested' ? (

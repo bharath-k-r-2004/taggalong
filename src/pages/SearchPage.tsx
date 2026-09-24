@@ -5,7 +5,8 @@ import { useAuth } from '../hooks/useAuth'
 import { LocationInput } from '../components/LocationInput'
 import { RideCard } from '../components/RideCard'
 import { Place } from '../lib/places'
-import { Ride, fetchUpcomingRides, matchRides, recommendationFor, todayString } from '../lib/rides'
+import { Ride, fetchUpcomingRides, isJoinable, matchRides, recommendationFor, todayString } from '../lib/rides'
+import { friendlyError } from '../lib/errors'
 
 interface SearchState {
   from?: Place | null
@@ -42,8 +43,8 @@ export function SearchPage() {
     setLoading(true)
     setError(null)
     fetchUpcomingRides()
-      .then(setRides)
-      .catch(err => setError(err.message || 'Could not load rides'))
+      .then(list => setRides(list.filter(isJoinable)))
+      .catch(err => setError(friendlyError(err)))
       .finally(() => setLoading(false))
   }
 

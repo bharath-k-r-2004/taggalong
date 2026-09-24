@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase'
 import { LocationInput } from '../components/LocationInput'
 import { Place } from '../lib/places'
 import { formatDateLabel, formatRupees, formatTime, shortPlace } from '../lib/rides'
+import { friendlyError } from '../lib/errors'
 import {
   Driver,
   DriverBooking,
@@ -72,7 +73,7 @@ export function DriverProfilePage() {
       setTravellers(t)
       setBookings(b.filter(x => x.driver_id === id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load this driver')
+      setError(friendlyError(err))
     } finally {
       setLoading(false)
     }
@@ -106,12 +107,12 @@ export function DriverProfilePage() {
       const { error: vouchError } = await supabase
         .from('driver_vouches')
         .insert({ driver_id: driver.id, user_id: user!.id, vouch_type: vouchType })
-      if (vouchError) throw vouchError
+      if (vouchError && vouchError.code !== '23505') throw vouchError // 23505 = already vouched (double tap)
       setVouching(false)
       setNotice('Thanks! Your vouch helps other students choose.')
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save your vouch')
+      setError(friendlyError(err))
     } finally {
       setBusy(false)
     }
@@ -144,7 +145,7 @@ export function DriverProfilePage() {
       setNotice('Quote saved. Thanks for keeping prices up to date!')
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the quote')
+      setError(friendlyError(err))
     } finally {
       setBusy(false)
     }

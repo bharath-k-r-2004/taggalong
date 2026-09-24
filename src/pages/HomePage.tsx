@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Car, Search, UserCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { RideCard } from '../components/RideCard'
-import { Ride, fetchUpcomingRides, myParticipation, seatsLeft } from '../lib/rides'
+import { Ride, fetchUpcomingRides, isJoinable, myParticipation, seatsLeft } from '../lib/rides'
+import { friendlyError } from '../lib/errors'
 
 export function HomePage() {
   const { user } = useAuth()
@@ -15,7 +16,7 @@ export function HomePage() {
   useEffect(() => {
     fetchUpcomingRides()
       .then(setRides)
-      .catch(err => setError(err.message || 'Could not load rides'))
+      .catch(err => setError(friendlyError(err)))
       .finally(() => setLoading(false))
   }, [])
 
@@ -32,7 +33,7 @@ export function HomePage() {
 
   // Rides from others that still have seats
   const leavingSoon = rides
-    .filter(r => r.creator_id !== user?.id && seatsLeft(r) > 0 && r.id !== myNext?.id)
+    .filter(r => r.creator_id !== user?.id && seatsLeft(r) > 0 && r.id !== myNext?.id && isJoinable(r))
     .slice(0, 4)
 
   return (

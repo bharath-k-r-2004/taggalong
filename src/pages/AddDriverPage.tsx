@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { LocationInput } from '../components/LocationInput'
 import { Place } from '../lib/places'
 import { RELATIONSHIPS, VEHICLE_SUGGESTIONS, addDriver, isValidPhone, recordQuote } from '../lib/drivers'
+import { friendlyError } from '../lib/errors'
 
 export function AddDriverPage() {
   const { user } = useAuth()
@@ -56,7 +57,7 @@ export function AddDriverPage() {
       }
       navigate(`/drivers/${result.id}`, { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the driver')
+      setError(friendlyError(err))
       setSaving(false)
     }
   }

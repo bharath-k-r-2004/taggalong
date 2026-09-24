@@ -128,7 +128,14 @@ export async function addDriver(input: NewDriverInput): Promise<{ id: string; ex
     })
     .select('id')
     .single()
-  if (error) throw error
+  if (error) {
+    // someone added the same number a moment ago: use their entry
+    if (error.code === '23505') {
+      const { data: again } = await supabase.from('drivers').select('id').eq('phone', phone).maybeSingle()
+      if (again) return { id: again.id, existed: true }
+    }
+    throw error
+  }
 
   // Knowing or having travelled with the driver counts as a vouch
   if (input.relationship === 'travelled' || input.relationship === 'know') {
