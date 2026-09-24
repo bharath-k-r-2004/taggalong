@@ -24,6 +24,8 @@ import {
   Participant,
   Ride,
   StudentStats,
+  ConfirmedRide,
+  fetchMyConfirmedRides,
   fetchRide,
   fetchRideContact,
   fetchStudentStats,
@@ -38,6 +40,7 @@ import {
   myParticipation,
   peopleOnBoard,
   placeFromRide,
+  ridesClash,
   seatsLeft,
   shareIfYouJoin,
   shareWhenFull,
@@ -76,6 +79,7 @@ export function RideDetailsPage() {
   // small inline panels
   const [joinOpen, setJoinOpen] = useState(false)
   const [joinMessage, setJoinMessage] = useState('')
+  const [myConfirmed, setMyConfirmed] = useState<ConfirmedRide[]>([])
   const [cancelOpen, setCancelOpen] = useState<'leave' | 'ride' | null>(null)
   const [cancelReason, setCancelReason] = useState(CANCEL_REASONS[0])
 
@@ -88,6 +92,7 @@ export function RideDetailsPage() {
       if (!data) return
       // The database only returns the number to the poster and accepted riders
       setContact(await fetchRideContact(id).catch(() => null))
+      if (user) setMyConfirmed(await fetchMyConfirmedRides(user.id))
       if (data.driver_id) {
         const all = await fetchDrivers().catch(() => [])
         setDriver(all.find(d => d.id === data.driver_id) || null)
@@ -99,7 +104,7 @@ export function RideDetailsPage() {
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, user])
 
   useEffect(() => {
     void load()
@@ -161,6 +166,7 @@ export function RideDetailsPage() {
   const accepted = (ride.ride_participants || []).filter(p => p.status === 'accepted')
   const requests = (ride.ride_participants || []).filter(p => p.status === 'requested')
   const isMember = isCreator || mine?.status === 'accepted'
+  const clash = isCreator ? undefined : myConfirmed.find(c => c.id !== ride.id && ridesClash(c, ride))
   const canSeeContact = Boolean(contact) && isMember
 
   const requestToJoin = () =>
@@ -204,8 +210,21 @@ export function RideDetailsPage() {
 
   const respond = (p: Participant, status: 'accepted' | 'declined') =>
     run(
-      () => supabase.from('ride_participants').update({ status }).eq('id', p.id),
+      async () => {
+        const res = await supabase.from('ride_participants').update({ status }).eq('id', p.id).select('id')
+        if (!res.error && (res.data || []).length === 0) {
+          // e.g. another poster accepted them a moment earlier, so this request closed itself
+          return { error: { message: `${p.user?.name || 'This student'} is no longer waiting; they may have joined another ride.` } }
+        }
+        return res
+      },
       status === 'accepted' ? `${p.user?.name || 'Student'} is in!` : 'Request declined.'
+    )
+
+  // Clear a request that closed automatically and ask again (e.g. after leaving the other ride)
+  const requestAgain = (p: Participant) =>
+    run(() => supabase.from('ride_participants').delete().eq('id', p.id), 'You can send a new request now.').then(() =>
+      setJoinOpen(true)
     )
 
   const addDriverToGroup = () =>
@@ -683,6 +702,36 @@ export function RideDetailsPage() {
           </div>
         ) : mine?.status === 'cancelled' ? (
           <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">You left this ride.</div>
+        ) : mine?.status === 'withdrawn' ? (
+          <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">
+            <p className="font-semibold text-secondary-900">You joined another ride</p>
+            <p>
+              Another poster accepted you for a ride around this time, so this request was withdrawn automatically.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-3">
+              {mine.withdrawn_for && (
+                <Link to={`/ride/${mine.withdrawn_for}`} className="font-semibold text-primary-700 hover:underline">
+                  View your ride →
+                </Link>
+              )}
+              {active && !clash && (
+                <button type="button" disabled={busy} onClick={() => void requestAgain(mine)} className="font-semibold underline">
+                  Request this ride again
+                </button>
+              )}
+            </div>
+          </div>
+        ) : active && clash ? (
+          <div className="rounded-xl border border-secondary-200 bg-white p-4 text-sm text-secondary-700 shadow-sm">
+            <p className="font-semibold text-secondary-900">You're already confirmed on another ride around this time</p>
+            <p>
+              {formatDateLabel(clash.date)}, {formatTime(clash.departure_time)}: {clash.origin} → {clash.destination}. Leave that
+              ride first if you'd rather take this one.
+            </p>
+            <Link to={`/ride/${clash.id}`} className="mt-2 inline-block font-semibold text-primary-700 hover:underline">
+              View your ride →
+            </Link>
+          </div>
         ) : (
           active &&
           (joinOpen ? (
@@ -698,6 +747,10 @@ export function RideDetailsPage() {
                 placeholder="Hi, I would like to join this ride."
                 className="!rounded-xl"
               />
+              <p className="mt-2 text-xs text-secondary-500">
+                You join only after {ride.creator?.name?.split(' ')[0] || 'the poster'} accepts. You can request several rides; once
+                one accepts you, your other requests around this time are withdrawn automatically.
+              </p>
               {!group && hasFare(ride) && (
                 <p className="mt-2 text-xs text-secondary-500">
                   Total fare {formatRupees(Number(ride.total_cost))} is split equally among everyone on board. Your share if accepted now:{' '}
@@ -719,18 +772,25 @@ export function RideDetailsPage() {
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              disabled={busy || left === 0}
-              onClick={() => setJoinOpen(true)}
-              className="w-full rounded-xl bg-primary-600 py-3.5 text-lg font-semibold text-white shadow-md hover:bg-primary-700 disabled:opacity-50"
-            >
-              {left === 0
-                ? 'Ride is full'
-                : group
-                ? 'Join group'
-                : `Request to join · ${formatRupees(shareIfYouJoin(ride))}`}
-            </button>
+            <div>
+              <button
+                type="button"
+                disabled={busy || left === 0}
+                onClick={() => setJoinOpen(true)}
+                className="w-full rounded-xl bg-primary-600 py-3.5 text-lg font-semibold text-white shadow-md hover:bg-primary-700 disabled:opacity-50"
+              >
+                {left === 0
+                  ? 'Ride is full'
+                  : group
+                  ? 'Request to join group'
+                  : `Request to join · ${formatRupees(shareIfYouJoin(ride))}`}
+              </button>
+              {left > 0 && (
+                <p className="mt-1.5 text-center text-xs text-secondary-500">
+                  Your request goes to {ride.creator?.name?.split(' ')[0] || 'the poster'}. You join only after they accept.
+                </p>
+              )}
+            </div>
           ))
         )}
       </div>

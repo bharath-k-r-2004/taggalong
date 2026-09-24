@@ -38,6 +38,7 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
   else if (mine?.status === 'requested') badge = { text: 'Requested', className: 'bg-amber-100 text-amber-800' }
   else if (mine?.status === 'declined') badge = { text: 'Declined', className: 'bg-secondary-100 text-secondary-600' }
   else if (mine?.status === 'cancelled') badge = { text: 'You cancelled', className: 'bg-secondary-100 text-secondary-600' }
+  else if (mine?.status === 'withdrawn') badge = { text: 'Joined another ride', className: 'bg-secondary-100 text-secondary-600' }
   const group = isTravelGroup(ride)
   const onBoard = peopleOnBoard(ride)
 

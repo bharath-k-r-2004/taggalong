@@ -27,7 +27,9 @@ export function MyTripsPage() {
     const mineP = myParticipation(r, user?.id)
     const isPoster = r.creator_id === user?.id
     if (r.status === 'cancelled' || mineP?.status === 'cancelled') return 'cancelled'
-    if (isUpcoming(r)) return mineP?.status === 'declined' ? null : 'upcoming'
+    // requests that were declined, or closed because another ride accepted me, aren't trips
+    if (mineP?.status === 'declined' || mineP?.status === 'withdrawn') return null
+    if (isUpcoming(r)) return 'upcoming'
     // past trips count as completed only if I was actually on them (and a driver was arranged)
     if (r.status === 'looking') return null
     return isPoster || mineP?.status === 'accepted' ? 'completed' : null

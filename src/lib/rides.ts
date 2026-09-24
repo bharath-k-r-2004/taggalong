@@ -8,7 +8,8 @@ export interface Profile {
   batch: string | null
 }
 
-export type ParticipantStatus = 'requested' | 'accepted' | 'declined' | 'cancelled'
+// withdrawn = closed automatically because the student was accepted on another ride around that time
+export type ParticipantStatus = 'requested' | 'accepted' | 'declined' | 'cancelled' | 'withdrawn'
 
 export interface Participant {
   id: string
@@ -16,6 +17,7 @@ export interface Participant {
   status: ParticipantStatus
   message?: string | null
   joined_at?: string | null
+  withdrawn_for?: string | null // the ride that accepted them instead
   user?: Profile | null
 }
 
@@ -55,7 +57,7 @@ export const RIDE_SELECT =
   'date, departure_time, total_cost, max_seats, current_participants, driver_name, vehicle_type, ' +
   'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ' +
   'creator:users(name, course, batch), ' +
-  'ride_participants(id, user_id, status, message, joined_at, user:users(name, course, batch))'
+  'ride_participants(id, user_id, status, message, joined_at, withdrawn_for, user:users(name, course, batch))'
 
 // ---------- dates & times ----------
 
@@ -185,6 +187,37 @@ export function myParticipation(ride: Ride, userId?: string): Participant | unde
 
 export function pendingRequests(ride: Ride): Participant[] {
   return (ride.ride_participants || []).filter(p => p.status === 'requested')
+}
+
+// ---------- one ride at a time ----------
+
+// Rides leaving within 4 hours of each other count as the same trip (matches the database rule)
+export const CLASH_HOURS = 4
+
+export function ridesClash(a: Pick<Ride, 'date' | 'departure_time'>, b: Pick<Ride, 'date' | 'departure_time'>): boolean {
+  return Math.abs(rideDateTime(a).getTime() - rideDateTime(b).getTime()) <= CLASH_HOURS * 60 * 60 * 1000
+}
+
+export interface ConfirmedRide {
+  id: string
+  date: string
+  departure_time: string
+  origin: string
+  destination: string
+  status: string
+}
+
+// Rides the student has been accepted on (not cancelled), to warn before a clashing request
+export async function fetchMyConfirmedRides(userId: string): Promise<ConfirmedRide[]> {
+  const { data, error } = await supabase
+    .from('ride_participants')
+    .select('ride:rides(id, date, departure_time, origin, destination, status)')
+    .eq('user_id', userId)
+    .eq('status', 'accepted')
+  if (error) return []
+  return ((data || []) as unknown as { ride: ConfirmedRide | null }[])
+    .map(r => r.ride)
+    .filter((r): r is ConfirmedRide => Boolean(r) && r!.status !== 'cancelled')
 }
 
 // ---------- queries ----------
