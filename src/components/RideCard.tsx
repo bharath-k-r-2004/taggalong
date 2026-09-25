@@ -7,6 +7,9 @@ import {
   formatRupees,
   hasFare,
   isTravelGroup,
+  needsPosterConfirmation,
+  needsRiderConfirmation,
+  ridePhase,
   peopleOnBoard,
   formatTime,
   myParticipation,
@@ -31,8 +34,17 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
   const mine = myParticipation(ride, userId)
   const pending = isMine ? pendingRequests(ride).length : 0
 
+  const phase = ridePhase(ride)
+  const onTrip = isMine || mine?.status === 'accepted'
   let badge: { text: string; className: string } | null = null
   if (ride.status === 'cancelled') badge = { text: 'Cancelled', className: 'bg-red-100 text-red-700' }
+  else if (needsRiderConfirmation(ride, userId) || needsPosterConfirmation(ride, userId))
+    badge = { text: 'Confirm trip', className: 'bg-amber-100 text-amber-800' }
+  else if (phase === 'in_progress' && onTrip) badge = { text: 'On trip', className: 'bg-primary-600 text-white' }
+  else if (phase === 'completed' && onTrip)
+    badge = mine?.trip_confirmed === false
+      ? { text: "You didn't travel", className: 'bg-secondary-100 text-secondary-600' }
+      : { text: 'Completed', className: 'bg-secondary-100 text-secondary-700' }
   else if (isMine) badge = { text: 'Your ride', className: 'bg-primary-100 text-primary-700' }
   else if (mine?.status === 'accepted') badge = { text: "You're in", className: 'bg-primary-100 text-primary-700' }
   else if (mine?.status === 'requested') badge = { text: 'Requested', className: 'bg-amber-100 text-amber-800' }

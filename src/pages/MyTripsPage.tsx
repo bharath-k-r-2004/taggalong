@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { friendlyError } from '../lib/errors'
 import { RideCard } from '../components/RideCard'
-import { Ride, fetchMyRides, isUpcoming, myParticipation, rideDateTime } from '../lib/rides'
+import { Ride, fetchMyRides, myParticipation, rideDateTime, ridePhase } from '../lib/rides'
 
 type Tab = 'upcoming' | 'completed' | 'cancelled'
 
@@ -30,10 +30,13 @@ export function MyTripsPage() {
     if (r.status === 'cancelled' || mineP?.status === 'cancelled') return 'cancelled'
     // requests that were declined, or closed because another ride accepted me, aren't trips
     if (mineP?.status === 'declined' || mineP?.status === 'withdrawn') return null
-    if (isUpcoming(r)) return 'upcoming'
-    // past trips count as completed only if I was actually on them (and a driver was arranged)
-    if (r.status === 'looking') return null
-    return isPoster || mineP?.status === 'accepted' ? 'completed' : null
+    const onIt = isPoster || mineP?.status === 'accepted'
+    const phase = ridePhase(r)
+    if (phase === 'upcoming') return 'upcoming'
+    if (phase === 'in_progress') return onIt ? 'upcoming' : null // "On trip now"
+    // left long ago: a travel group that never got a driver didn't become a trip
+    if (phase === 'unconfirmed' && r.status === 'looking') return null
+    return onIt ? 'completed' : null
   }
   const upcoming = rides.filter(r => bucket(r) === 'upcoming')
   const completed = rides
@@ -45,8 +48,10 @@ export function MyTripsPage() {
   const counts: Record<Tab, number> = { upcoming: upcoming.length, completed: completed.length, cancelled: cancelled.length }
   const list = tab === 'upcoming' ? upcoming : tab === 'completed' ? completed : cancelled
 
-  const posted = list.filter(r => r.creator_id === user?.id)
-  const joined = list.filter(r => r.creator_id !== user?.id && myParticipation(r, user?.id))
+  const onTripNow = tab === 'upcoming' ? list.filter(r => ridePhase(r) === 'in_progress') : []
+  const rest = list.filter(r => !onTripNow.includes(r))
+  const posted = rest.filter(r => r.creator_id === user?.id)
+  const joined = rest.filter(r => r.creator_id !== user?.id && myParticipation(r, user?.id))
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
@@ -99,6 +104,16 @@ export function MyTripsPage() {
         </div>
       ) : (
         <div className="space-y-8">
+          {onTripNow.length > 0 && (
+            <section>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-primary-700">On trip now</h2>
+              <div className="space-y-3">
+                {onTripNow.map(r => (
+                  <RideCard key={r.id} ride={r} userId={user?.id} />
+                ))}
+              </div>
+            </section>
+          )}
           {posted.length > 0 && (
             <section>
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-secondary-500">Rides you posted</h2>

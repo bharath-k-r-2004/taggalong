@@ -3,15 +3,30 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Car, Search, UserCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { RideCard } from '../components/RideCard'
-import { Ride, fetchUpcomingRides, isJoinable, myParticipation, seatsLeft } from '../lib/rides'
+import {
+  Ride,
+  fetchMyRides,
+  fetchUpcomingRides,
+  isJoinable,
+  myParticipation,
+  needsPosterConfirmation,
+  needsRiderConfirmation,
+  ridePhase,
+  seatsLeft
+} from '../lib/rides'
 import { friendlyError } from '../lib/errors'
 
 export function HomePage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [rides, setRides] = useState<Ride[]>([])
+  const [myRides, setMyRides] = useState<Ride[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (user) fetchMyRides(user.id).then(setMyRides).catch(() => setMyRides([]))
+  }, [user])
 
   useEffect(() => {
     fetchUpcomingRides()
@@ -24,8 +39,15 @@ export function HomePage() {
   const course = user?.user_metadata?.course
   const batch = user?.user_metadata?.batch
 
+  // A trip I'm on right now, and past trips waiting for my answer
+  const onTrip = myRides.find(
+    r => ridePhase(r) === 'in_progress' && (r.creator_id === user?.id || myParticipation(r, user?.id)?.status === 'accepted')
+  )
+  const toConfirm = myRides.filter(r => needsRiderConfirmation(r, user?.id) || needsPosterConfirmation(r, user?.id))
+
   // My next trip: a ride I posted, or one I asked to join
   const myNext = rides.find(r => {
+    if (ridePhase(r) !== 'upcoming') return false
     if (r.creator_id === user?.id) return true
     const p = myParticipation(r, user?.id)
     return p?.status === 'accepted' || p?.status === 'requested'
@@ -107,6 +129,26 @@ export function HomePage() {
 
       <div className="space-y-6 px-4 py-6">
         {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+        {onTrip && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary-700">You're on a trip</h3>
+            <RideCard ride={onTrip} userId={user?.id} />
+          </section>
+        )}
+
+        {toConfirm.length > 0 && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-800">
+              Confirm your trip{toConfirm.length > 1 ? 's' : ''}
+            </h3>
+            <div className="space-y-3">
+              {toConfirm.map(r => (
+                <RideCard key={r.id} ride={r} userId={user?.id} />
+              ))}
+            </div>
+          </section>
+        )}
 
         {myNext && (
           <section>

@@ -18,6 +18,8 @@ export interface Participant {
   message?: string | null
   joined_at?: string | null
   withdrawn_for?: string | null // the ride that accepted them instead
+  trip_confirmed?: boolean | null // rider's answer after the trip: true travelled, false didn't, null not yet
+  arrived_at?: string | null
   user?: Profile | null
 }
 
@@ -43,6 +45,7 @@ export interface Ride {
   time_flexibility: number | null // minutes either side; null = flexible
   toll_included: boolean | null
   cancel_reason: string | null
+  ended_at?: string | null // when the poster ended the ride
   // open / full / looking (travel group, no driver yet) / cancelled / completed
   status: 'open' | 'full' | 'looking' | 'cancelled' | 'completed' | string
   created_at: string
@@ -55,10 +58,11 @@ export interface Ride {
 export const RIDE_SELECT =
   'id, creator_id, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, ' +
   'date, departure_time, total_cost, max_seats, current_participants, driver_name, vehicle_type, ' +
-  'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ' +
+  'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ended_at, ' +
   'creator:users(name, course, batch), ' +
   // "!ride_id" names the exact link to follow, so extra links can never confuse the API
-  'ride_participants!ride_id(id, user_id, status, message, joined_at, withdrawn_for, user:users(name, course, batch))'
+  'ride_participants!ride_id(id, user_id, status, message, joined_at, withdrawn_for, trip_confirmed, arrived_at, ' +
+  'user:users(name, course, batch))'
 
 // ---------- dates & times ----------
 
@@ -188,6 +192,50 @@ export function myParticipation(ride: Ride, userId?: string): Participant | unde
 
 export function pendingRequests(ride: Ride): Participant[] {
   return (ride.ride_participants || []).filter(p => p.status === 'requested')
+}
+
+// ---------- trip phases ----------
+
+// A ride counts as "in progress" from departure until the poster ends it, for up to 12 hours
+export const TRIP_WINDOW_HOURS = 12
+
+export type RidePhase = 'upcoming' | 'in_progress' | 'completed' | 'unconfirmed' | 'cancelled'
+
+export function ridePhase(ride: Ride): RidePhase {
+  if (ride.status === 'cancelled') return 'cancelled'
+  if (ride.status === 'completed') return 'completed'
+  const leaves = rideDateTime(ride).getTime()
+  const now = Date.now()
+  if (now < leaves) return 'upcoming'
+  if (now < leaves + TRIP_WINDOW_HOURS * 3600000) return 'in_progress'
+  return 'unconfirmed' // left long ago but nobody ended it
+}
+
+// Accepted rider who still has to say whether they travelled
+export function needsRiderConfirmation(ride: Ride, userId?: string): boolean {
+  const p = myParticipation(ride, userId)
+  const phase = ridePhase(ride)
+  return Boolean(p && p.status === 'accepted' && p.trip_confirmed == null && (phase === 'completed' || phase === 'unconfirmed'))
+}
+
+// Poster who never ended a ride that left long ago
+export function needsPosterConfirmation(ride: Ride, userId?: string): boolean {
+  return ride.creator_id === userId && ridePhase(ride) === 'unconfirmed'
+}
+
+// Rough arrival estimate from straight-line distance (road ≈ 1.35×, ~45 km/h average, +10 min)
+export function estimatedArrival(ride: Ride): Date | null {
+  const km = distanceKm(
+    { lat: ride.origin_lat, lng: ride.origin_lng },
+    { lat: ride.destination_lat, lng: ride.destination_lng }
+  )
+  if (km === null) return null
+  const minutes = (km * 1.35 * 60) / 45 + 10
+  return new Date(rideDateTime(ride).getTime() + minutes * 60000)
+}
+
+export function clockTime(d: Date): string {
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase()
 }
 
 // ---------- one ride at a time ----------

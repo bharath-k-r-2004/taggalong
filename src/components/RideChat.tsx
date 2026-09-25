@@ -81,7 +81,7 @@ export function RideChat({ rideId, userId }: { rideId: string; userId: string })
       .toUpperCase()
 
   return (
-    <section className="mt-3 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
+    <section id="ride-chat" className="mt-3 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
       <h2 className="mb-1 flex items-center gap-2 font-semibold text-secondary-900">
         <MessageCircle size={18} className="text-primary-600" /> Ride group chat
       </h2>

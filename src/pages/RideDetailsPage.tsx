@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { RideChat } from '../components/RideChat'
+import { LiveTripPanel } from '../components/LiveTripPanel'
 import { Driver, fetchDrivers } from '../lib/drivers'
 import { friendlyError } from '../lib/errors'
 import {
@@ -37,11 +38,13 @@ import {
   hasFare,
   isLastMinute,
   isTravelGroup,
-  isUpcoming,
   myParticipation,
   peopleOnBoard,
+  needsPosterConfirmation,
+  needsRiderConfirmation,
   placeFromRide,
   rideDateTime,
+  ridePhase,
   ridesClash,
   seatsLeft,
   shareIfYouJoin,
@@ -166,9 +169,9 @@ export function RideDetailsPage() {
   }
 
   const mine = myParticipation(ride, user?.id)
-  const upcoming = isUpcoming(ride) // still shown to its members for 30 minutes after leaving
   const departed = rideDateTime(ride).getTime() <= Date.now()
   const active = !departed && ride.status !== 'cancelled' // requests, edits, leaving and cancelling
+  const phase = ridePhase(ride)
   const group = isTravelGroup(ride)
   const left = seatsLeft(ride)
   const onBoard = peopleOnBoard(ride)
@@ -250,6 +253,26 @@ export function RideDetailsPage() {
         notes: ride.notes
       }
     })
+
+  const endRide = (happened: boolean) =>
+    void run(
+      () =>
+        supabase
+          .from('rides')
+          .update(happened ? { status: 'completed' } : { status: 'cancelled', cancel_reason: 'Trip did not happen' })
+          .eq('id', ride.id),
+      happened ? 'Trip completed. Riders will be asked to confirm they travelled.' : "Marked as not happened. It won't count on anyone's record."
+    )
+
+  const confirmTrip = (travelled: boolean) =>
+    void run(
+      () =>
+        supabase
+          .from('ride_participants')
+          .update(travelled ? { trip_confirmed: true, arrived_at: new Date().toISOString() } : { trip_confirmed: false })
+          .eq('id', mine!.id),
+      travelled ? 'Glad you made it! Trip confirmed.' : "Noted: you didn't travel on this trip."
+    )
 
   const editRide = () =>
     navigate('/create-ride', {
@@ -349,9 +372,76 @@ export function RideDetailsPage() {
           This ride was cancelled{ride.cancel_reason ? ` (${ride.cancel_reason.toLowerCase()})` : ''}.
         </div>
       )}
-      {ride.status !== 'cancelled' && departed && (
-        <div className="mb-3 rounded-xl bg-secondary-100 px-4 py-3 text-sm text-secondary-700">
-          This ride has already left (at {formatTime(ride.departure_time)}).
+      {phase === 'in_progress' && isMember && user ? (
+        <LiveTripPanel
+          ride={ride}
+          userId={user.id}
+          myName={user.user_metadata?.name || 'A rider'}
+          isCreator={isCreator}
+          contact={contact}
+          busy={busy}
+          onEnd={endRide}
+          onConfirm={confirmTrip}
+        />
+      ) : phase === 'completed' ? (
+        <div className="mb-3 rounded-xl bg-primary-50 px-4 py-3 text-sm font-medium text-primary-800">
+          Trip completed{ride.ended_at ? ` on ${formatDateLabel(ride.ended_at.slice(0, 10))}` : ''}.
+        </div>
+      ) : (
+        ride.status !== 'cancelled' &&
+        departed && (
+          <div className="mb-3 rounded-xl bg-secondary-100 px-4 py-3 text-sm text-secondary-700">
+            This ride has already left (at {formatTime(ride.departure_time)}).
+          </div>
+        )
+      )}
+
+      {/* After the trip: poster who never ended it, or rider who hasn't answered */}
+      {needsPosterConfirmation(ride, user?.id) && (
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="font-semibold text-amber-900">This ride left more than 12 hours ago. Did it happen?</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => endRide(true)}
+              className="rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              Yes, it happened
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => endRide(false)}
+              className="rounded-xl border border-secondary-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              No, it didn't
+            </button>
+          </div>
+        </div>
+      )}
+      {needsRiderConfirmation(ride, user?.id) && (
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="font-semibold text-amber-900">Did you complete this trip?</p>
+          <p className="text-sm text-amber-800">It helps keep student records and driver history accurate.</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => confirmTrip(true)}
+              className="rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              Yes, I travelled
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => confirmTrip(false)}
+              className="rounded-xl border border-secondary-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              No, I didn't
+            </button>
+          </div>
         </div>
       )}
 
@@ -609,7 +699,7 @@ export function RideDetailsPage() {
                   <div className="flex shrink-0 gap-2">
                     <button
                       type="button"
-                      disabled={busy || left === 0 || !upcoming}
+                      disabled={busy || left === 0 || departed}
                       onClick={() => void respond(p, 'accepted')}
                       className="flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
                     >
@@ -671,7 +761,11 @@ export function RideDetailsPage() {
           )
         ) : departed ? (
           mine?.status === 'accepted' ? (
-            <div className="rounded-xl bg-primary-50 p-4 text-sm text-primary-800">This trip has finished. Hope it went well!</div>
+            phase === 'in_progress' || needsRiderConfirmation(ride, user?.id) ? null : mine.trip_confirmed === false ? (
+              <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">You marked that you didn't travel on this trip.</div>
+            ) : (
+              <div className="rounded-xl bg-primary-50 p-4 text-sm text-primary-800">Trip completed. Thanks for travelling together!</div>
+            )
           ) : mine?.status === 'requested' ? (
             <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">
               The ride left before your request was accepted.
