@@ -11,6 +11,8 @@ import { RELATIONSHIPS, RankedDriver, addDriver, recordQuote } from '../lib/driv
 import { friendlyError } from '../lib/errors'
 
 const VEHICLES = ['Cab (Sedan)', 'Cab (SUV)', 'Cab (Hatchback)', 'Own car', 'Auto', 'Other']
+// An auto's or your own car's driver number is optional; every cab (and other hired vehicle) needs one
+const NUMBER_OPTIONAL = ['Auto', 'Own car']
 
 type Mode = 'driver' | 'group'
 
@@ -66,6 +68,10 @@ export function CreateRidePage() {
   const [error, setError] = useState<string | null>(null)
 
   const phoneDigits = phone.replace(/\D/g, '').slice(-10)
+  const numberRequired = !NUMBER_OPTIONAL.includes(vehicleType)
+  const phoneValid = /^[6-9]\d{9}$/.test(phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, ''))
+  // Only drivers with a proper 10-digit number go into the community directory
+  const canSaveToDirectory = phoneValid
   const keptDriverId = editing && prefill.driverId && phoneDigits === (prefill.phone || '') ? prefill.driverId : null
   const cost = Number(totalCost)
   const seatCount = Number(seats)
@@ -102,9 +108,10 @@ export function CreateRidePage() {
     if (mode === 'group') return null
     if (!(cost > 0)) return 'Please enter the total fare for the ride.'
     if (cost > 100000) return 'Please enter a total fare between ₹1 and ₹1,00,000.'
-    const digits = phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '')
-    if (!/^[6-9]\d{9}$/.test(digits)) return "Please enter the driver's 10-digit mobile number."
-    if (!picked && saveToDirectory && driverName.trim().length < 2)
+    if (numberRequired && !phoneValid) return "Please enter the driver's 10-digit mobile number."
+    if (!numberRequired && phone.trim() && !phoneValid)
+      return `Enter a valid 10-digit number, or leave it empty for ${vehicleType === 'Auto' ? 'an auto' : 'your own car'}.`
+    if (!picked && saveToDirectory && canSaveToDirectory && driverName.trim().length < 2)
       return "Please add the driver's name so other students can find them in the directory."
     return null
   }
@@ -174,7 +181,7 @@ export function CreateRidePage() {
 
       // Save a new driver to the community directory (or reuse the listed one)
       let driverId = picked?.driver.id || keptDriverId || null
-      if (!driverId && saveToDirectory) {
+      if (!driverId && saveToDirectory && canSaveToDirectory) {
         const result = await addDriver({
           userId: user.id,
           name: driverName,
@@ -194,7 +201,7 @@ export function CreateRidePage() {
         vehicle_type: vehicleType,
         vehicle_number: vehicleNumber.trim().toUpperCase() || null,
         driver_name: driverName.trim() || user.user_metadata?.name || null,
-        driver_phone: phone.replace(/\D/g, '').slice(-10),
+        driver_phone: phoneValid ? phoneDigits : null,
         driver_id: driverId
       }
 
@@ -496,7 +503,9 @@ export function CreateRidePage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-secondary-700">Driver's number</label>
+                  <label className="mb-1 block text-sm font-medium text-secondary-700">
+                    Driver's number {!numberRequired && <span className="font-normal text-secondary-400">(optional)</span>}
+                  </label>
                   <input
                     type="tel"
                     inputMode="numeric"
@@ -504,16 +513,23 @@ export function CreateRidePage() {
                     onChange={e => setPhone(e.target.value)}
                     placeholder="98765 43210"
                     className={fieldClass}
-                    required
+                    required={numberRequired}
                   />
                 </div>
               </div>
               <p className="text-xs text-secondary-500">
-                The driver's number is shown only to you and the students whose request you accept. Driving yourself? Enter your own number.
+                {numberRequired
+                  ? "The driver's number is shown only to you and the students whose request you accept."
+                  : `Optional for ${vehicleType === 'Auto' ? 'an auto' : 'your own car'}. If you add it, only you and accepted students see it.`}
               </p>
 
               {/* New driver: offer to add them to the community directory */}
-              {!picked && !keptDriverId && (
+              {!picked && !keptDriverId && !canSaveToDirectory && (
+                <p className="rounded-xl bg-secondary-50 px-3 py-2 text-xs text-secondary-600">
+                  Add the driver's 10-digit number to save them to the TagAlong driver directory.
+                </p>
+              )}
+              {!picked && !keptDriverId && canSaveToDirectory && (
                 <div className="space-y-2 rounded-xl bg-secondary-50 p-3">
                   <label className="flex items-start gap-2 text-sm text-secondary-800">
                     <input

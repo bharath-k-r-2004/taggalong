@@ -201,14 +201,30 @@ export const TRIP_WINDOW_HOURS = 12
 
 export type RidePhase = 'upcoming' | 'in_progress' | 'completed' | 'unconfirmed' | 'cancelled'
 
+// When "on trip" should end if nobody ends the ride: expected arrival plus a buffer
+// (at least 45 minutes, or half the trip's length if longer), never more than 12 hours.
+// Without map points to estimate from, the full 12 hours.
+export function tripEndsBy(ride: Ride): number {
+  const leaves = rideDateTime(ride).getTime()
+  const cap = leaves + TRIP_WINDOW_HOURS * 3600000
+  const eta = estimatedArrival(ride)
+  if (!eta) return cap
+  const buffer = Math.max(45 * 60000, (eta.getTime() - leaves) * 0.5)
+  return Math.min(cap, eta.getTime() + buffer)
+}
+
+export function isPastExpectedArrival(ride: Ride): boolean {
+  const eta = estimatedArrival(ride)
+  return Boolean(eta && Date.now() > eta.getTime())
+}
+
 export function ridePhase(ride: Ride): RidePhase {
   if (ride.status === 'cancelled') return 'cancelled'
   if (ride.status === 'completed') return 'completed'
-  const leaves = rideDateTime(ride).getTime()
   const now = Date.now()
-  if (now < leaves) return 'upcoming'
-  if (now < leaves + TRIP_WINDOW_HOURS * 3600000) return 'in_progress'
-  return 'unconfirmed' // left long ago but nobody ended it
+  if (now < rideDateTime(ride).getTime()) return 'upcoming'
+  if (now < tripEndsBy(ride)) return 'in_progress'
+  return 'unconfirmed' // should have arrived by now, but nobody ended it
 }
 
 // Accepted rider who still has to say whether they travelled

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Car, CheckCircle2, MessageCircle, Phone, Share2, Siren, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getCurrentPosition } from '../lib/places'
-import { Ride, clockTime, estimatedArrival, formatTime, myParticipation } from '../lib/rides'
+import { Ride, clockTime, estimatedArrival, formatTime, isPastExpectedArrival, myParticipation } from '../lib/rides'
 
 interface LiveTripPanelProps {
   ride: Ride
@@ -38,6 +38,7 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
   const [shareNote, setShareNote] = useState<string | null>(null)
 
   const eta = estimatedArrival(ride)
+  const overdue = isPastExpectedArrival(ride)
   const mine = myParticipation(ride, userId)
   const companions = [
     ...(ride.creator_id !== userId ? [firstNameTag(ride.creator)] : []),
@@ -96,6 +97,12 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
         Left at {formatTime(ride.departure_time)}
         {eta && <> · expected around {clockTime(eta)} (rough estimate)</>}
       </p>
+      {overdue && (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          You should have arrived by now.{' '}
+          {isCreator ? 'Arrived? Tap End ride so everyone’s trip is recorded.' : 'Arrived? Tap I’ve reached.'}
+        </p>
+      )}
 
       {(ride.driver_name || car) && (
         <p className="mt-3 flex items-center gap-2 text-sm text-secondary-800">
@@ -195,13 +202,18 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setEndOpen(true)}
-              className="w-full rounded-xl bg-primary-600 py-3 font-semibold text-white hover:bg-primary-700"
-            >
-              End ride
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setEndOpen(true)}
+                className="w-full rounded-xl bg-primary-600 py-3 font-semibold text-white hover:bg-primary-700"
+              >
+                End ride
+              </button>
+              <p className="mt-2 text-center text-xs text-secondary-500">
+                The ride also ends by itself once every rider taps “I’ve reached”.
+              </p>
+            </>
           )
         ) : mine?.arrived_at || mine?.trip_confirmed === true ? (
           <p className="flex items-center gap-2 text-sm font-medium text-primary-700">

@@ -40,6 +40,8 @@ import {
   isTravelGroup,
   myParticipation,
   peopleOnBoard,
+  clockTime,
+  estimatedArrival,
   needsPosterConfirmation,
   needsRiderConfirmation,
   placeFromRide,
@@ -399,7 +401,12 @@ export function RideDetailsPage() {
       {/* After the trip: poster who never ended it, or rider who hasn't answered */}
       {needsPosterConfirmation(ride, user?.id) && (
         <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <p className="font-semibold text-amber-900">This ride left more than 12 hours ago. Did it happen?</p>
+          <p className="font-semibold text-amber-900">
+            {estimatedArrival(ride)
+              ? `This ride should have arrived by ${clockTime(estimatedArrival(ride) as Date)}.`
+              : `This ride left at ${formatTime(ride.departure_time)}.`}{' '}
+            Did it happen?
+          </p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
