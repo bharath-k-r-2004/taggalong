@@ -73,8 +73,9 @@ export function cleanPhone(input: string): string {
   return input.replace(/\D/g, '').replace(/^(91|0)(?=\d{10}$)/, '')
 }
 
+// Exactly 10 digits, starting with 6-9 (the phone box never allows more or fewer)
 export function isValidPhone(input: string): boolean {
-  return /^[6-9]\d{9}$/.test(cleanPhone(input))
+  return /^[6-9]\d{9}$/.test(input.replace(/\s/g, ''))
 }
 
 export async function fetchDrivers(): Promise<Driver[]> {

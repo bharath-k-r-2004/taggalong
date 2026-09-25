@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Car, ChevronLeft, CreditCard, IndianRupee, Phone, UserCircle } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { LocationInput } from '../components/LocationInput'
+import { PhoneInput } from '../components/PhoneInput'
 import { Place } from '../lib/places'
 import { DEFAULT_SEATS, DRIVER_VEHICLE_TYPES, RELATIONSHIPS, addDriver, isValidPhone, recordQuote } from '../lib/drivers'
 import { friendlyError } from '../lib/errors'
@@ -90,15 +91,7 @@ export function AddDriverPage() {
             <label className="mb-1 flex items-center gap-2 text-sm font-medium text-secondary-700">
               <Phone size={16} /> Phone number
             </label>
-            <input
-              type="tel"
-              inputMode="numeric"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="98765 43210"
-              className={fieldClass}
-              required
-            />
+            <PhoneInput value={phone} onChange={setPhone} required ariaLabel="Driver's phone number" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

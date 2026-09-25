@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { LocationInput } from '../components/LocationInput'
 import { DriverPicker } from '../components/DriverPicker'
+import { PhoneInput, isTenDigitMobile } from '../components/PhoneInput'
 import { Place } from '../lib/places'
 import { FLEXIBILITY_OPTIONS, formatDateLabel, formatRupees, formatTime, todayString } from '../lib/rides'
 import { RELATIONSHIPS, RankedDriver, addDriver, recordQuote } from '../lib/drivers'
@@ -58,7 +59,7 @@ export function CreateRidePage() {
   const [vehicleType, setVehicleType] = useState(prefill.vehicleType || VEHICLES[0])
   const [vehicleNumber, setVehicleNumber] = useState(prefill.vehicleNumber || '')
   const [driverName, setDriverName] = useState(prefill.driverName || '')
-  const [phone, setPhone] = useState(prefill.phone || '')
+  const [phone, setPhone] = useState((prefill.phone || '').replace(/\D/g, '').slice(-10))
   const [notes, setNotes] = useState(prefill.notes || '')
   const [picked, setPicked] = useState<RankedDriver | null>(null)
   const [quoteNote, setQuoteNote] = useState<string | null>(null)
@@ -67,9 +68,9 @@ export function CreateRidePage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const phoneDigits = phone.replace(/\D/g, '').slice(-10)
+  const phoneDigits = phone // the phone box only ever holds digits, at most 10
   const numberRequired = !NUMBER_OPTIONAL.includes(vehicleType)
-  const phoneValid = /^[6-9]\d{9}$/.test(phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, ''))
+  const phoneValid = isTenDigitMobile(phone)
   // Only hired drivers with a proper 10-digit number go into the community directory
   // (never "Own car": the student is the driver)
   const ownCar = vehicleType === 'Own car'
@@ -87,7 +88,7 @@ export function CreateRidePage() {
     if (!item) return
     const d = item.driver
     setDriverName(d.name)
-    setPhone(d.phone)
+    setPhone((d.phone || '').replace(/\D/g, '').slice(-10))
     if (d.vehicle_type) setVehicleType(d.vehicle_type)
     setVehicleNumber(d.vehicle_number || '')
     if (d.seats) setSeats(String(Math.min(7, Math.max(minSeats, d.seats))))
@@ -508,15 +509,7 @@ export function CreateRidePage() {
                   <label className="mb-1 block text-sm font-medium text-secondary-700">
                     Driver's number {!numberRequired && <span className="font-normal text-secondary-400">(optional)</span>}
                   </label>
-                  <input
-                    type="tel"
-                    inputMode="numeric"
-                    value={phone}
-                    onChange={e => setPhone(e.target.value)}
-                    placeholder="98765 43210"
-                    className={fieldClass}
-                    required={numberRequired}
-                  />
+                  <PhoneInput value={phone} onChange={setPhone} required={numberRequired} ariaLabel="Driver's number" />
                 </div>
               </div>
               <p className="text-xs text-secondary-500">
