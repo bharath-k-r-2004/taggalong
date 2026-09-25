@@ -54,16 +54,17 @@ export const RELATIONSHIPS = [
   { value: 'other', label: 'Other' }
 ]
 
-export const VEHICLE_SUGGESTIONS = [
-  'Maruti Suzuki Dzire',
-  'Maruti Suzuki Ertiga',
-  'Toyota Innova',
-  'Toyota Innova Crysta',
-  'Hyundai Aura',
-  'Honda Amaze',
-  'Mahindra Scorpio',
-  'Tata Tigor'
-]
+// Vehicle types a community driver can have (same names as on Post a ride)
+export const DRIVER_VEHICLE_TYPES = ['Cab (Sedan)', 'Cab (SUV)', 'Cab (Hatchback)', 'Auto', 'Other']
+
+// Usual passenger seats for each type (can be changed)
+export const DEFAULT_SEATS: Record<string, number> = {
+  'Cab (Sedan)': 4,
+  'Cab (SUV)': 6,
+  'Cab (Hatchback)': 4,
+  Auto: 3,
+  Other: 4
+}
 
 export const QUOTE_DISCLAIMER =
   'Driver prices are quotes recorded by students. They may change with the date, time, route, tolls, waiting time and other conditions.'

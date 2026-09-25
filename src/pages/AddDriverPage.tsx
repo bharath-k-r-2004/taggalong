@@ -4,7 +4,7 @@ import { Car, ChevronLeft, CreditCard, IndianRupee, Phone, UserCircle } from 'lu
 import { useAuth } from '../hooks/useAuth'
 import { LocationInput } from '../components/LocationInput'
 import { Place } from '../lib/places'
-import { RELATIONSHIPS, VEHICLE_SUGGESTIONS, addDriver, isValidPhone, recordQuote } from '../lib/drivers'
+import { DEFAULT_SEATS, DRIVER_VEHICLE_TYPES, RELATIONSHIPS, addDriver, isValidPhone, recordQuote } from '../lib/drivers'
 import { friendlyError } from '../lib/errors'
 
 export function AddDriverPage() {
@@ -13,7 +13,7 @@ export function AddDriverPage() {
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [vehicle, setVehicle] = useState('')
+  const [vehicle, setVehicle] = useState(DRIVER_VEHICLE_TYPES[0])
   const [vehicleNumber, setVehicleNumber] = useState('')
   const [seats, setSeats] = useState(4)
   const [relationship, setRelationship] = useState('travelled')
@@ -103,21 +103,21 @@ export function AddDriverPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 flex items-center gap-2 text-sm font-medium text-secondary-700">
-                <Car size={16} /> Car model
+                <Car size={16} /> Vehicle type
               </label>
-              <input
-                type="text"
-                list="vehicle-suggestions"
+              <select
                 value={vehicle}
-                onChange={e => setVehicle(e.target.value)}
-                placeholder="e.g. Maruti Suzuki Dzire"
-                className="!rounded-xl"
-              />
-              <datalist id="vehicle-suggestions">
-                {VEHICLE_SUGGESTIONS.map(v => (
-                  <option key={v} value={v} />
+                onChange={e => {
+                  setVehicle(e.target.value)
+                  setSeats(DEFAULT_SEATS[e.target.value] || 4)
+                }}
+                className="!rounded-xl !py-2.5"
+                aria-label="Vehicle type"
+              >
+                {DRIVER_VEHICLE_TYPES.map(v => (
+                  <option key={v}>{v}</option>
                 ))}
-              </datalist>
+              </select>
             </div>
             <div>
               <label className="mb-1 flex items-center gap-2 text-sm font-medium text-secondary-700">

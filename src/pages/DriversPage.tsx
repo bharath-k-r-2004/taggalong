@@ -85,7 +85,7 @@ export function DriversPage() {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search by driver name, car or number"
+            placeholder="Search by driver name, vehicle type or number"
             className="!border-0 !bg-transparent !p-0 !ring-0 focus:!ring-0"
           />
         </div>

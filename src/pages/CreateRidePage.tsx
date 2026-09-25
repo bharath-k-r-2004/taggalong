@@ -70,8 +70,10 @@ export function CreateRidePage() {
   const phoneDigits = phone.replace(/\D/g, '').slice(-10)
   const numberRequired = !NUMBER_OPTIONAL.includes(vehicleType)
   const phoneValid = /^[6-9]\d{9}$/.test(phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, ''))
-  // Only drivers with a proper 10-digit number go into the community directory
-  const canSaveToDirectory = phoneValid
+  // Only hired drivers with a proper 10-digit number go into the community directory
+  // (never "Own car": the student is the driver)
+  const ownCar = vehicleType === 'Own car'
+  const canSaveToDirectory = phoneValid && !ownCar
   const keptDriverId = editing && prefill.driverId && phoneDigits === (prefill.phone || '') ? prefill.driverId : null
   const cost = Number(totalCost)
   const seatCount = Number(seats)
@@ -524,7 +526,7 @@ export function CreateRidePage() {
               </p>
 
               {/* New driver: offer to add them to the community directory */}
-              {!picked && !keptDriverId && !canSaveToDirectory && (
+              {!picked && !keptDriverId && !canSaveToDirectory && !ownCar && (
                 <p className="rounded-xl bg-secondary-50 px-3 py-2 text-xs text-secondary-600">
                   Add the driver's 10-digit number to save them to the TagAlong driver directory.
                 </p>

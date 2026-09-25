@@ -89,7 +89,7 @@ export function DriverPicker({ from, to, userId, selectedId, onSelect, preselect
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search by driver name or car"
+            placeholder="Search by driver name or vehicle type"
             className="!border-0 !bg-transparent !p-0 !ring-0 focus:!ring-0"
           />
         </div>
