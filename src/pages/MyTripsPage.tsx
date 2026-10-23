@@ -28,6 +28,8 @@ export function MyTripsPage() {
     const mineP = myParticipation(r, user?.id)
     const isPoster = r.creator_id === user?.id
     if (r.status === 'cancelled' || mineP?.status === 'cancelled') return 'cancelled'
+    // expired = left with nobody else on board: only the poster sees it, alongside cancelled trips
+    if (r.status === 'expired') return isPoster ? 'cancelled' : null
     // requests that were declined, or closed because another ride accepted me, aren't trips
     if (mineP?.status === 'declined' || mineP?.status === 'withdrawn') return null
     const onIt = isPoster || mineP?.status === 'accepted'

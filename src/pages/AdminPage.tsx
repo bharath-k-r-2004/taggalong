@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ShieldAlert, Wrench, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { formatDateLabel, formatRupees, formatTime, shortPlace } from '../lib/rides'
+import { Ride, formatDateLabel, formatRupees, formatTime, rideDateTime, ridePhase, shortPlace } from '../lib/rides'
 
 type Tab = 'rides' | 'drivers' | 'students' | 'quotes'
 type Row = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -12,6 +12,39 @@ interface Health {
   detail: string
 }
 
+// What a ride really is right now. The stored status only changes when someone acts,
+// so a ride that left still says "open" until it's ended or expires.
+function rideState(r: Row): { label: string; tone: string; cancellable: boolean } {
+  const phase = ridePhase(r as Ride)
+  switch (phase) {
+    case 'upcoming':
+      return {
+        label: r.status === 'looking' ? 'Upcoming · looking for a driver' : r.status === 'full' ? 'Upcoming · full' : 'Upcoming · open',
+        tone: 'text-primary-700',
+        cancellable: true
+      }
+    case 'in_progress':
+      return { label: 'On trip now', tone: 'text-primary-700', cancellable: false }
+    case 'unconfirmed':
+      return { label: 'Left · not ended yet', tone: 'text-amber-700', cancellable: false }
+    case 'completed':
+      return { label: 'Completed', tone: 'text-secondary-700', cancellable: false }
+    case 'expired':
+      return { label: 'Expired · nobody joined', tone: 'text-secondary-500', cancellable: false }
+    default:
+      return { label: 'Cancelled', tone: 'text-red-700', cancellable: false }
+  }
+}
+
+// Upcoming rides first (soonest at the top), then everything else (most recent first)
+function sortRides(rows: Row[]): Row[] {
+  const now = Date.now()
+  const when = (r: Row) => rideDateTime(r as Ride).getTime()
+  const upcoming = rows.filter(r => when(r) > now).sort((a, b) => when(a) - when(b))
+  const past = rows.filter(r => when(r) <= now).sort((a, b) => when(b) - when(a))
+  return [...upcoming, ...past]
+}
+
 const OVERVIEW_LABELS: [string, string][] = [
   ['students', 'Students signed up'],
   ['students_without_name', 'Haven’t entered a name'],
@@ -19,6 +52,7 @@ const OVERVIEW_LABELS: [string, string][] = [
   ['travel_groups', 'Groups looking for a driver'],
   ['rides_completed', 'Completed rides'],
   ['rides_cancelled', 'Cancelled rides'],
+  ['rides_expired', 'Expired (nobody joined)'],
   ['requests_pending', 'Join requests waiting'],
   ['riders_accepted', 'Riders accepted (all time)'],
   ['drivers', 'Community drivers'],
@@ -51,7 +85,7 @@ export function AdminPage() {
     const { data, error: listError } = await supabase.rpc('admin_list', { p_kind: kind })
     setLoading(false)
     if (listError) setError(listError.message)
-    else setRows((data || []) as Row[])
+    else setRows(kind === 'rides' ? sortRides((data || []) as Row[]) : ((data || []) as Row[]))
   }, [])
 
   const refresh = useCallback(async () => {
@@ -215,46 +249,49 @@ export function AdminPage() {
             <table className="w-full text-left text-sm">
               <tbody className="divide-y divide-secondary-100">
                 {tab === 'rides' &&
-                  rows.map(r => (
-                    <tr key={r.id} className="align-top">
-                      <td className="px-4 py-3">
-                        <p className="font-medium">
-                          {formatDateLabel(r.date)}, {formatTime(r.departure_time)}
-                        </p>
-                        <p className="text-secondary-600">
-                          {shortPlace(r.origin)} → {shortPlace(r.destination)}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p>{r.creator_name || 'No name'}</p>
-                        <p className="text-xs text-secondary-500">{r.creator_email}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="capitalize">{r.status}</p>
-                        <p className="text-xs text-secondary-500">
-                          {r.current_participants}/{r.max_seats} on board · {r.pending} waiting
-                          {r.total_cost ? ` · ${formatRupees(Number(r.total_cost))}` : ''}
-                        </p>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right">
-                        <Link to={`/ride/${r.id}`} className="mr-3 font-medium text-primary-600 hover:underline">
-                          Open
-                        </Link>
-                        {r.status !== 'cancelled' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const reason = window.prompt('Reason for cancelling (visible on the ride):', 'Cancelled by admin')
-                              if (reason !== null) void action('admin_cancel_ride', { p_ride: r.id, p_reason: reason }, 'Ride cancelled.')
-                            }}
-                            className="font-medium text-red-600 hover:underline"
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  rows.map(r => {
+                    const state = rideState(r)
+                    return (
+                      <tr key={r.id} className="align-top">
+                        <td className="px-4 py-3">
+                          <p className="font-medium">
+                            {formatDateLabel(r.date)}, {formatTime(r.departure_time)}
+                          </p>
+                          <p className="text-secondary-600">
+                            {shortPlace(r.origin)} → {shortPlace(r.destination)}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p>{r.creator_name || 'No name'}</p>
+                          <p className="text-xs text-secondary-500">{r.creator_email}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className={`font-medium ${state.tone}`}>{state.label}</p>
+                          <p className="text-xs text-secondary-500">
+                            {r.current_participants}/{r.max_seats} on board · {r.pending} waiting
+                            {r.total_cost ? ` · ${formatRupees(Number(r.total_cost))}` : ''}
+                          </p>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
+                          <Link to={`/ride/${r.id}`} className="mr-3 font-medium text-primary-600 hover:underline">
+                            View
+                          </Link>
+                          {state.cancellable && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const reason = window.prompt('Reason for cancelling (visible on the ride):', 'Cancelled by admin')
+                                if (reason !== null) void action('admin_cancel_ride', { p_ride: r.id, p_reason: reason }, 'Ride cancelled.')
+                              }}
+                              className="font-medium text-red-600 hover:underline"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
 
                 {tab === 'drivers' &&
                   rows.map(d => (

@@ -46,8 +46,9 @@ export interface Ride {
   toll_included: boolean | null
   cancel_reason: string | null
   ended_at?: string | null // when the poster ended the ride
-  // open / full / looking (travel group, no driver yet) / cancelled / completed
-  status: 'open' | 'full' | 'looking' | 'cancelled' | 'completed' | string
+  // open / full / looking (travel group, no driver yet) / cancelled / completed /
+  // expired (left with nobody else on board; closed automatically by the database)
+  status: 'open' | 'full' | 'looking' | 'cancelled' | 'completed' | 'expired' | string
   created_at: string
   creator?: Profile | null
   ride_participants?: Participant[]
@@ -100,9 +101,14 @@ export function formatTime(time: string): string {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase()
 }
 
-// Upcoming = not cancelled, and departure no more than 30 minutes ago
+// Cancelled by someone, or expired because nobody joined before it left
+export function isClosed(ride: Pick<Ride, 'status'>): boolean {
+  return ride.status === 'cancelled' || ride.status === 'expired'
+}
+
+// Upcoming = not closed or completed, and departure no more than 30 minutes ago
 export function isUpcoming(ride: Ride): boolean {
-  if (ride.status === 'cancelled' || ride.status === 'completed') return false
+  if (isClosed(ride) || ride.status === 'completed') return false
   return rideDateTime(ride).getTime() >= Date.now() - 30 * 60 * 1000
 }
 
@@ -199,7 +205,7 @@ export function pendingRequests(ride: Ride): Participant[] {
 // A ride counts as "in progress" from departure until the poster ends it, for up to 12 hours
 export const TRIP_WINDOW_HOURS = 12
 
-export type RidePhase = 'upcoming' | 'in_progress' | 'completed' | 'unconfirmed' | 'cancelled'
+export type RidePhase = 'upcoming' | 'in_progress' | 'completed' | 'unconfirmed' | 'cancelled' | 'expired'
 
 // When "on trip" should end if nobody ends the ride: expected arrival plus a buffer
 // (at least 45 minutes, or half the trip's length if longer), never more than 12 hours.
@@ -220,6 +226,7 @@ export function isPastExpectedArrival(ride: Ride): boolean {
 
 export function ridePhase(ride: Ride): RidePhase {
   if (ride.status === 'cancelled') return 'cancelled'
+  if (ride.status === 'expired') return 'expired'
   if (ride.status === 'completed') return 'completed'
   const now = Date.now()
   if (now < rideDateTime(ride).getTime()) return 'upcoming'
@@ -297,7 +304,7 @@ export async function fetchUpcomingRides(): Promise<Ride[]> {
     .from('rides')
     .select(RIDE_SELECT)
     .gte('date', todayString())
-    .not('status', 'in', '(cancelled,completed)')
+    .not('status', 'in', '(cancelled,completed,expired)')
     .order('date', { ascending: true })
     .order('departure_time', { ascending: true })
 

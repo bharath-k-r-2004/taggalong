@@ -6,6 +6,7 @@ import {
   formatTimeGap,
   formatRupees,
   hasFare,
+  isClosed,
   isTravelGroup,
   needsPosterConfirmation,
   needsRiderConfirmation,
@@ -38,6 +39,7 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
   const onTrip = isMine || mine?.status === 'accepted'
   let badge: { text: string; className: string } | null = null
   if (ride.status === 'cancelled') badge = { text: 'Cancelled', className: 'bg-red-100 text-red-700' }
+  else if (ride.status === 'expired') badge = { text: 'Expired', className: 'bg-secondary-100 text-secondary-600' }
   else if (needsRiderConfirmation(ride, userId) || needsPosterConfirmation(ride, userId))
     badge = { text: 'Confirm trip', className: 'bg-amber-100 text-amber-800' }
   else if (phase === 'in_progress' && onTrip) badge = { text: 'On trip', className: 'bg-primary-600 text-white' }
@@ -111,7 +113,7 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
       {hints.length > 0 && <p className="mt-2 text-xs text-primary-700">{hints.join(' · ')}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-        {group && ride.status !== 'cancelled' && (
+        {group && !isClosed(ride) && (
           <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800">Looking for a driver</span>
         )}
         {badge && <span className={`rounded-full px-2.5 py-1 font-semibold ${badge.className}`}>{badge.text}</span>}
@@ -120,7 +122,7 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
             {pending} request{pending > 1 ? 's' : ''} waiting
           </span>
         )}
-        {ride.status !== 'cancelled' && (
+        {!isClosed(ride) && (
           <span
             className={`flex items-center gap-1 rounded-full px-2.5 py-1 font-medium ${
               left > 0 ? 'bg-secondary-100 text-secondary-700' : 'bg-red-50 text-red-700'

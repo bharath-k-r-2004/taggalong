@@ -42,8 +42,8 @@ export function matchRides(
   const matches: MatchScore[] = []
 
   for (const ride of allRides) {
-    // Skip if ride is full or cancelled
-    if (ride.status === 'cancelled' || ride.currentParticipants >= ride.maxSeats) {
+    // Skip if ride is full, cancelled or expired
+    if (ride.status === 'cancelled' || ride.status === 'expired' || ride.currentParticipants >= ride.maxSeats) {
       continue
     }
 

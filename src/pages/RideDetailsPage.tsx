@@ -36,6 +36,7 @@ import {
   formatRupees,
   formatTime,
   hasFare,
+  isClosed,
   isLastMinute,
   isTravelGroup,
   myParticipation,
@@ -172,7 +173,7 @@ export function RideDetailsPage() {
 
   const mine = myParticipation(ride, user?.id)
   const departed = rideDateTime(ride).getTime() <= Date.now()
-  const active = !departed && ride.status !== 'cancelled' // requests, edits, leaving and cancelling
+  const active = !departed && !isClosed(ride) // requests, edits, leaving and cancelling
   const phase = ridePhase(ride)
   const group = isTravelGroup(ride)
   const left = seatsLeft(ride)
@@ -385,6 +386,10 @@ export function RideDetailsPage() {
           onEnd={endRide}
           onConfirm={confirmTrip}
         />
+      ) : phase === 'expired' ? (
+        <div className="mb-3 rounded-xl bg-secondary-100 px-4 py-3 text-sm text-secondary-700">
+          This ride expired. Nobody joined before it left at {formatTime(ride.departure_time)}, so it was closed automatically.
+        </div>
       ) : phase === 'completed' ? (
         <div className="mb-3 rounded-xl bg-primary-50 px-4 py-3 text-sm font-medium text-primary-800">
           Trip completed{ride.ended_at ? ` on ${formatDateLabel(ride.ended_at.slice(0, 10))}` : ''}.
@@ -453,7 +458,7 @@ export function RideDetailsPage() {
       )}
 
       {/* Travel group banner */}
-      {group && ride.status !== 'cancelled' && (
+      {group && !isClosed(ride) && (
         <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <p className="flex items-center gap-2 font-semibold text-amber-900">
             <Car size={18} /> Looking for a driver
@@ -682,7 +687,7 @@ export function RideDetailsPage() {
       </section>
 
       {/* Requests (poster only) */}
-      {isCreator && requests.length > 0 && ride.status !== 'cancelled' && (
+      {isCreator && requests.length > 0 && !isClosed(ride) && (
         <section className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-5">
           <h2 className="mb-2 font-semibold text-amber-900">
             {requests.length} request{requests.length > 1 ? 's' : ''} to join
@@ -733,7 +738,7 @@ export function RideDetailsPage() {
       )}
 
       {/* Group chat for the poster and confirmed travellers */}
-      {isMember && user && ride.status !== 'cancelled' && <RideChat rideId={ride.id} userId={user.id} />}
+      {isMember && user && !isClosed(ride) && <RideChat rideId={ride.id} userId={user.id} />}
 
       {/* Main action */}
       <div className="sticky bottom-20 mt-4 md:bottom-4">
