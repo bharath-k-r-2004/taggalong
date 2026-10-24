@@ -5,7 +5,6 @@ import {
   Check,
   Pencil,
   ChevronLeft,
-  Clock,
   HeartHandshake,
   MessageCircle,
   Phone,
@@ -18,6 +17,7 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { RideChat } from '../components/RideChat'
+import { RideWhen } from '../components/RideWhen'
 import { LiveTripPanel } from '../components/LiveTripPanel'
 import { Driver, fetchDrivers } from '../lib/drivers'
 import { friendlyError } from '../lib/errors'
@@ -471,16 +471,10 @@ export function RideDetailsPage() {
 
       {/* Trip summary */}
       <section className="rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-3xl font-bold text-secondary-900">{formatTime(ride.departure_time)}</p>
-            <p className="flex items-center gap-1 text-secondary-600">
-              <Clock size={14} />
-              {formatDateLabel(ride.date)} · {flexibilityLabel(ride.time_flexibility)}
-            </p>
-          </div>
+        <div className="flex items-center justify-between gap-3">
+          <RideWhen ride={ride} size="lg" extra={flexibilityLabel(ride.time_flexibility)} />
           <span
-            className={`rounded-full px-3 py-1 text-sm font-semibold ${
+            className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm font-semibold ${
               left > 0 ? 'bg-primary-100 text-primary-700' : 'bg-red-100 text-red-700'
             }`}
           >

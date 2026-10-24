@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import { Car, Star, Users } from 'lucide-react'
+import { RideWhen } from './RideWhen'
 import {
   Ride,
-  formatDateLabel,
   formatTimeGap,
   formatRupees,
   hasFare,
@@ -12,7 +12,6 @@ import {
   needsRiderConfirmation,
   ridePhase,
   peopleOnBoard,
-  formatTime,
   myParticipation,
   pendingRequests,
   seatsLeft,
@@ -77,12 +76,9 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
           <p className="text-xs text-primary-700">{recommendation}</p>
         </div>
       )}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-lg font-bold text-secondary-900">{formatTime(ride.departure_time)}</p>
-          <p className="text-sm text-secondary-500">{formatDateLabel(ride.date)}</p>
-        </div>
-        <div className="text-right">
+      <div className="flex items-center justify-between gap-3">
+        <RideWhen ride={ride} />
+        <div className="max-w-[9rem] shrink-0 text-right sm:max-w-none">
           {hasFare(ride) ? (
             <>
               <p className="text-lg font-bold text-secondary-900">{formatRupees(shareWhenFull(ride))}</p>

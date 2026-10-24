@@ -88,10 +88,23 @@ export function formatDateLabel(date: string): string {
   const d = parseLocalDate(date)
   const today = parseLocalDate(todayString())
   const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Tomorrow'
-  if (diffDays === -1) return 'Yesterday'
+  const dayMonth = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  // "Today, 24 Oct" keeps the real date visible next to the friendly word
+  if (diffDays === 0) return `Today, ${dayMonth}`
+  if (diffDays === 1) return `Tomorrow, ${dayMonth}`
+  if (diffDays === -1) return `Yesterday, ${dayMonth}`
   return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+// "Leaves in 3 hrs" / "Leaves in 6 days"; empty once the ride has left
+export function leavesIn(ride: Pick<Ride, 'date' | 'departure_time'>): string {
+  const mins = Math.round((rideDateTime(ride).getTime() - Date.now()) / 60000)
+  if (mins <= 0) return ''
+  if (mins < 60) return `Leaves in ${mins} min`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `Leaves in ${hrs} hr${hrs > 1 ? 's' : ''}`
+  const days = Math.round(hrs / 24)
+  return `Leaves in ${days} day${days > 1 ? 's' : ''}`
 }
 
 export function formatTime(time: string): string {
