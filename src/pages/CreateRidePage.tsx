@@ -92,6 +92,8 @@ export function CreateRidePage() {
   // (never "Own car": the student is the driver)
   const ownCar = vehicleType === 'Own car'
   const canSaveToDirectory = phoneValid && !ownCar
+  // A new driver saved to the directory needs a name; otherwise the name is optional
+  const nameNeeded = !picked && saveToDirectory && canSaveToDirectory
   const keptDriverId = editing && prefill.driverId && phoneDigits === (prefill.phone || '') ? prefill.driverId : null
   const cost = Number(totalCost)
   const seatCount = Number(seats)
@@ -200,7 +202,7 @@ export function CreateRidePage() {
     if (numberRequired && !phoneValid) return "Please enter the driver's 10-digit mobile number."
     if (!numberRequired && phone.trim() && !phoneValid)
       return `Enter a valid 10-digit number, or leave it empty for ${vehicleType === 'Auto' ? 'an auto' : 'your own car'}.`
-    if (!picked && saveToDirectory && canSaveToDirectory && driverName.trim().length < 2)
+    if (nameNeeded && driverName.trim().length < 2)
       return "Please add the driver's name so other students can find them in the directory."
     return null
   }
@@ -662,10 +664,13 @@ export function CreateRidePage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1 block text-sm font-medium text-secondary-700">
-                        Driver name <span className="font-normal text-secondary-400">(optional)</span>
+                        Driver name{' '}
+                        <span className="font-normal text-secondary-400">{nameNeeded ? '(needed for the directory)' : '(optional)'}</span>
                       </label>
                       <input
                         type="text"
+                        required={nameNeeded}
+                        minLength={nameNeeded ? 2 : undefined}
                         value={driverName}
                         onChange={e => setDriverName(e.target.value)}
                         placeholder="e.g. Ramesh (or your name if you drive)"

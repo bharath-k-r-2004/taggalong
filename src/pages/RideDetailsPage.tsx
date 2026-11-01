@@ -854,7 +854,14 @@ export function RideDetailsPage() {
             )}
           </div>
         ) : mineStatus === 'expired' ? (
-          <div className="rounded-xl bg-secondary-100 p-4 text-sm font-semibold text-secondary-700">Expired</div>
+          <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">
+            <p className="font-semibold">Expired</p>
+            {mine && requestsOpen(ride) && left > 0 && (
+              <button type="button" disabled={busy} onClick={() => void requestAgain(mine)} className="mt-2 font-semibold text-primary-700 underline">
+                Request again
+              </button>
+            )}
+          </div>
         ) : mineStatus === 'requested' ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
             <p className="font-semibold text-amber-900">Request sent</p>
