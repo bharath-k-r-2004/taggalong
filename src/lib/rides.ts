@@ -61,7 +61,7 @@ export const RIDE_SELECT =
   'id, creator_id, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, ' +
   'date, departure_time, total_cost, max_seats, current_participants, driver_name, vehicle_type, ' +
   'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ended_at, schedule_id, ' +
-  'creator:users(name, course, batch), ' +
+  'creator:users!creator_id(name, course, batch), ' + // named: rides and users are also linked via ride_locations
   // "!ride_id" names the exact link to follow, so extra links can never confuse the API
   'ride_participants!ride_id(id, user_id, status, message, joined_at, withdrawn_for, trip_confirmed, arrived_at, ' +
   'user:users(name, course, batch))'
