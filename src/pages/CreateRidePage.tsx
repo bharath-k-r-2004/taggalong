@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowUpDown, Car, IndianRupee, Info, Users } from 'lucide-react'
+import { ArrowUpDown, Car, IndianRupee, Info, Sparkles, Users } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { LocationInput } from '../components/LocationInput'
@@ -47,7 +47,10 @@ export function CreateRidePage() {
   const updating = converting || editing
   const minSeats = Math.max(2, prefill.onBoard || 1)
 
-  const [mode, setMode] = useState<Mode>(converting ? 'driver' : prefill.mode || 'driver')
+  // Coming from a driver's profile with no driver of your own: that's the "Not yet" flow with the driver chosen
+  const [mode, setMode] = useState<Mode>(
+    converting ? 'driver' : prefill.mode || (prefill.driverId && !editing ? 'group' : 'driver')
+  )
   const [from, setFrom] = useState<Place | null>(prefill.from || null)
   const [to, setTo] = useState<Place | null>(prefill.to || null)
   const [date, setDate] = useState(prefill.date || todayString())
@@ -62,6 +65,9 @@ export function CreateRidePage() {
   const [phone, setPhone] = useState((prefill.phone || '').replace(/\D/g, '').slice(-10))
   const [notes, setNotes] = useState(prefill.notes || '')
   const [picked, setPicked] = useState<RankedDriver | null>(null)
+  const [pickSource, setPickSource] = useState<'auto' | 'manual' | null>(null)
+  const [noDriver, setNoDriver] = useState(false) // chose to post without a driver for now
+  const [autoBest, setAutoBest] = useState<RankedDriver | null>(null)
   const [quoteNote, setQuoteNote] = useState<string | null>(null)
   const [saveToDirectory, setSaveToDirectory] = useState(true)
   const [relationship, setRelationship] = useState('travelled')
@@ -80,12 +86,32 @@ export function CreateRidePage() {
   const seatCount = Number(seats)
   const perPerson = cost > 0 && seatCount > 0 ? cost / seatCount : null
   const vehicleOptions = VEHICLES.includes(vehicleType) ? VEHICLES : [vehicleType, ...VEHICLES]
+  // The community driver list (and auto-assign) is for students without a driver of their own,
+  // and for a travel group that's now getting its driver
+  const showPicker = converting || (mode === 'group' && !editing)
+  // "Not yet" with a driver assigned posts a normal ride; without one, a travel group
+  const postsAsGroup = mode === 'group' && !picked
+  const routeSet = Boolean(from?.name && to?.name)
 
   // Choosing a community driver fills in the details below
-  const pickDriver = (item: RankedDriver | null) => {
-    setPicked(item)
+  const clearDriver = () => {
+    setPicked(null)
+    setPickSource(null)
     setQuoteNote(null)
-    if (!item) return
+    if (editing) return
+    setDriverName('')
+    setPhone('')
+    setVehicleNumber('')
+    if (!converting) setVehicleType(VEHICLES[0])
+    setTotalCost('')
+    setToll(null)
+  }
+
+  const pickDriver = (item: RankedDriver | null, source: 'auto' | 'manual' = 'manual') => {
+    if (!item) return clearDriver()
+    setPicked(item)
+    setPickSource(source)
+    setQuoteNote(null)
     const d = item.driver
     setDriverName(d.name)
     setPhone((d.phone || '').replace(/\D/g, '').slice(-10))
@@ -100,6 +126,41 @@ export function CreateRidePage() {
     }
   }
 
+  // The list reports the best available driver whenever the route, date or time changes.
+  // Assign it unless the student picked someone themselves or chose to go without a driver.
+  const handleAutoBest = (item: RankedDriver | null) => {
+    setAutoBest(item)
+    if (!showPicker || pickSource === 'manual' || noDriver) return
+    if (item) {
+      if (item.driver.id !== picked?.driver.id || pickSource !== 'auto') pickDriver(item, 'auto')
+    } else if (pickSource === 'auto') {
+      clearDriver()
+    }
+  }
+
+  const chooseFromList = (item: RankedDriver | null) => {
+    if (item) {
+      setNoDriver(false)
+      pickDriver(item, 'manual')
+    } else {
+      // tapped the chosen driver again: go without one
+      clearDriver()
+      setNoDriver(true)
+    }
+  }
+
+  const goWithoutDriver = () => {
+    clearDriver()
+    setNoDriver(true)
+  }
+
+  const switchMode = (next: Mode) => {
+    if (next === mode) return
+    clearDriver()
+    setNoDriver(false)
+    setMode(next)
+  }
+
   const validate = (): string | null => {
     if (!from?.name) return 'Please choose where the ride starts.'
     if (!to?.name) return 'Please choose where the ride is going.'
@@ -108,7 +169,7 @@ export function CreateRidePage() {
     const [y, m, d] = date.split('-').map(Number)
     const [hh, mm] = time.split(':').map(Number)
     if (new Date(y, m - 1, d, hh, mm).getTime() < Date.now() - 5 * 60 * 1000) return 'The departure time has already passed.'
-    if (mode === 'group') return null
+    if (postsAsGroup) return null
     if (!(cost > 0)) return 'Please enter the total fare for the ride.'
     if (cost > 100000) return 'Please enter a total fare between ₹1 and ₹1,00,000.'
     if (numberRequired && !phoneValid) return "Please enter the driver's 10-digit mobile number."
@@ -170,8 +231,8 @@ export function CreateRidePage() {
         return
       }
 
-      // "Find travellers first": a travel group with no driver or fare yet
-      if (mode === 'group') {
+      // "Not yet" without a driver: a travel group with no driver or fare yet
+      if (postsAsGroup) {
         const { data, error: insertError } = await supabase
           .from('rides')
           .insert({ ...route, creator_id: user.id, current_participants: 1, status: 'looking' })
@@ -241,7 +302,9 @@ export function CreateRidePage() {
       if (editing) await announceChange(rideId)
       navigate(`/ride/${rideId}`, {
         replace: true,
-        state: { justPosted: editing ? 'edited' : converting ? 'converted' : 'ride' }
+        state: {
+          justPosted: editing ? 'edited' : converting ? 'converted' : pickSource === 'auto' ? 'assigned' : picked ? 'picked' : 'ride'
+        }
       })
     } catch (err) {
       console.error('Create ride error:', err)
@@ -256,7 +319,7 @@ export function CreateRidePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="text-2xl font-bold text-secondary-900">
-        {editing ? 'Edit ride' : converting ? 'Add a driver to your group' : mode === 'group' ? 'Find travellers first' : 'Post a ride'}
+        {editing ? 'Edit ride' : converting ? 'Add a driver to your group' : 'Post a ride'}
       </h1>
       <p className="mb-6 text-secondary-600">
         {editing
@@ -264,7 +327,7 @@ export function CreateRidePage() {
           : converting
           ? 'Your group becomes a ride with a driver and fare that members can see.'
           : mode === 'group'
-          ? "No driver yet? Post your trip, gather students going the same way, then pick a driver together."
+          ? "No driver yet? We'll assign a community driver who has driven your route, or you can gather travellers first."
           : 'Share your cab or car and split the fare with other students.'}
       </p>
 
@@ -272,13 +335,13 @@ export function CreateRidePage() {
       {!updating && (
         <div className="mb-5 grid grid-cols-2 gap-3">
           {[
-            { value: 'driver' as Mode, icon: Car, title: 'I have a driver', text: 'Share the ride and split the fare' },
-            { value: 'group' as Mode, icon: Users, title: 'Not yet', text: 'Find fellow travellers first' }
+            { value: 'driver' as Mode, icon: Car, title: 'I have a driver', text: "Enter your driver's details" },
+            { value: 'group' as Mode, icon: Users, title: 'Not yet', text: "We'll assign a community driver" }
           ].map(opt => (
             <button
               key={opt.value}
               type="button"
-              onClick={() => setMode(opt.value)}
+              onClick={() => switchMode(opt.value)}
               className={`rounded-2xl border p-3 text-left transition ${
                 mode === opt.value
                   ? 'border-primary-600 bg-primary-50 ring-2 ring-primary-100'
@@ -332,7 +395,7 @@ export function CreateRidePage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-secondary-700">
-                {mode === 'group' ? 'Preferred time' : 'Departure time'}
+                {postsAsGroup ? 'Preferred time' : 'Departure time'}
               </label>
               <input type="time" value={time} onChange={e => setTime(e.target.value)} className="!rounded-xl" required />
             </div>
@@ -356,7 +419,79 @@ export function CreateRidePage() {
           </div>
         </section>
 
-        {mode === 'group' ? (
+        {/* Community driver: shown when you don't have a driver of your own */}
+        {showPicker && (
+          <section className="rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
+            <h2 className="font-semibold text-secondary-900">{converting ? 'Choose a driver' : 'Your driver'}</h2>
+            {picked && pickSource === 'auto' ? (
+              <div className="mb-3 mt-2 rounded-xl border border-primary-200 bg-primary-50 p-3 text-sm text-primary-900">
+                <p className="flex items-center gap-1.5 font-semibold">
+                  <Sparkles size={16} className="shrink-0 text-primary-600" /> {picked.driver.name} has been assigned automatically
+                </p>
+                <p className="mt-1 text-primary-800">
+                  Has a recorded price for this route and isn't booked through TagAlong around your time. You'll see his number
+                  after posting: call him to confirm he's free.
+                </p>
+                {!converting && (
+                  <button type="button" onClick={goWithoutDriver} className="mt-2 text-sm font-semibold text-primary-700 underline">
+                    Post without a driver for now
+                  </button>
+                )}
+              </div>
+            ) : picked ? (
+              <div className="mb-3 mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-secondary-50 px-3 py-2 text-sm text-secondary-700">
+                <span>
+                  You chose <strong>{picked.driver.name}</strong>. Call him after posting to confirm.
+                </span>
+                {!converting && (
+                  <button type="button" onClick={goWithoutDriver} className="font-semibold text-primary-700 underline">
+                    Post without a driver
+                  </button>
+                )}
+              </div>
+            ) : noDriver ? (
+              <div className="mb-3 mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {converting
+                  ? "Pick a driver below, or enter your own driver's details further down."
+                  : 'Posting without a driver. Students can still join, and you can add a driver later from your ride page.'}
+                {autoBest && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNoDriver(false)
+                      pickDriver(autoBest, 'auto')
+                    }}
+                    className="ml-1 font-semibold text-primary-700 underline"
+                  >
+                    Assign {autoBest.driver.name} instead
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="mb-3 mt-1 text-sm text-secondary-500">
+                {!routeSet
+                  ? "Enter where you're going and we'll assign a community driver who has driven that route."
+                  : converting
+                  ? "No community driver has a price for this route yet. Pick one below, or enter your own driver's details further down."
+                  : 'No community driver has a price for this route yet (or they are busy at that time), so this will post as a travel group. You can still pick a driver below and enter the fare.'}
+              </p>
+            )}
+            <DriverPicker
+              from={from}
+              to={to}
+              userId={user?.id}
+              selectedId={picked?.driver.id || null}
+              onSelect={chooseFromList}
+              preselectId={editing ? null : prefill.driverId || null}
+              date={date}
+              time={time}
+              onAutoBest={handleAutoBest}
+              selectedTag={pickSource === 'auto' ? 'Auto-assigned' : 'Chosen'}
+            />
+          </section>
+        )}
+
+        {postsAsGroup ? (
           /* Travel group: just the group size and notes */
           <section className="space-y-3 rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
             <div>
@@ -373,7 +508,7 @@ export function CreateRidePage() {
             </div>
             <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <Info size={16} className="mt-0.5 shrink-0" />
-              Students can join your group now. Once you choose a driver, add the driver and fare from your ride page and the cost is split automatically.
+              Students can join your group now. Once you have a driver, add the driver and fare from your ride page and the cost is split automatically.
             </p>
             <div>
               <label className="mb-1 block text-sm font-medium text-secondary-700">
@@ -391,24 +526,6 @@ export function CreateRidePage() {
           </section>
         ) : (
           <>
-            {/* Select your driver (community directory) */}
-            <section className="rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
-              <h2 className="font-semibold text-secondary-900">Select your driver</h2>
-              <p className="mb-3 text-sm text-secondary-500">
-                Drivers IIM Rohtak students have travelled with. Not listed? Enter your driver's details further below.
-              </p>
-              <DriverPicker
-                from={from}
-                to={to}
-                userId={user?.id}
-                selectedId={picked?.driver.id || null}
-                onSelect={pickDriver}
-                preselectId={editing ? null : prefill.driverId || null}
-                date={date}
-                time={time}
-              />
-            </section>
-
             {/* Fare & seats */}
             <section className="rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
               <div className="grid grid-cols-2 gap-3">
@@ -468,91 +585,9 @@ export function CreateRidePage() {
               )}
             </section>
 
-            {/* Vehicle & contact */}
-            <section className="space-y-3 rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-secondary-700">Vehicle</label>
-                  <select value={vehicleType} onChange={e => setVehicleType(e.target.value)} className="!rounded-xl !py-2.5">
-                    {vehicleOptions.map(v => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-secondary-700">
-                    Vehicle number <span className="font-normal text-secondary-400">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={vehicleNumber}
-                    onChange={e => setVehicleNumber(e.target.value)}
-                    placeholder="HR12AB1234"
-                    className="!rounded-xl uppercase"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-secondary-700">
-                    Driver name <span className="font-normal text-secondary-400">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={driverName}
-                    onChange={e => setDriverName(e.target.value)}
-                    placeholder="e.g. Ramesh (or your name if you drive)"
-                    className="!rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-secondary-700">
-                    Driver's number {!numberRequired && <span className="font-normal text-secondary-400">(optional)</span>}
-                  </label>
-                  <PhoneInput value={phone} onChange={setPhone} required={numberRequired} ariaLabel="Driver's number" />
-                </div>
-              </div>
-              <p className="text-xs text-secondary-500">
-                {numberRequired
-                  ? "The driver's number is shown only to you and the students whose request you accept."
-                  : `Optional for ${vehicleType === 'Auto' ? 'an auto' : 'your own car'}. If you add it, only you and accepted students see it.`}
-              </p>
-
-              {/* New driver: offer to add them to the community directory */}
-              {!picked && !keptDriverId && !canSaveToDirectory && !ownCar && (
-                <p className="rounded-xl bg-secondary-50 px-3 py-2 text-xs text-secondary-600">
-                  Add the driver's 10-digit number to save them to the TagAlong driver directory.
-                </p>
-              )}
-              {!picked && !keptDriverId && canSaveToDirectory && (
-                <div className="space-y-2 rounded-xl bg-secondary-50 p-3">
-                  <label className="flex items-start gap-2 text-sm text-secondary-800">
-                    <input
-                      type="checkbox"
-                      checked={saveToDirectory}
-                      onChange={e => setSaveToDirectory(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 accent-primary-600"
-                    />
-                    <span>
-                      Add this driver to the TagAlong driver directory
-                      <span className="block text-xs text-secondary-500">
-                        Other students can then find and contact them. Untick if you're driving yourself.
-                      </span>
-                    </span>
-                  </label>
-                  {saveToDirectory && (
-                    <select value={relationship} onChange={e => setRelationship(e.target.value)} className="!rounded-xl !py-2">
-                      {RELATIONSHIPS.map(r => (
-                        <option key={r.value} value={r.value}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              )}
-
-              <div>
+            {/* Community driver chosen: vehicle and number come from the directory */}
+            {mode === 'group' ? (
+              <section className="rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
                 <label className="mb-1 block text-sm font-medium text-secondary-700">
                   Notes <span className="font-normal text-secondary-400">(optional)</span>
                 </label>
@@ -564,8 +599,109 @@ export function CreateRidePage() {
                   placeholder="Meeting point, luggage space, stops on the way..."
                   className="!rounded-xl"
                 />
-              </div>
-            </section>
+              </section>
+            ) : (
+              <>
+                {/* Vehicle & contact */}
+                <section className="space-y-3 rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-secondary-700">Vehicle</label>
+                      <select value={vehicleType} onChange={e => setVehicleType(e.target.value)} className="!rounded-xl !py-2.5">
+                        {vehicleOptions.map(v => (
+                          <option key={v}>{v}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-secondary-700">
+                        Vehicle number <span className="font-normal text-secondary-400">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={vehicleNumber}
+                        onChange={e => setVehicleNumber(e.target.value)}
+                        placeholder="HR12AB1234"
+                        className="!rounded-xl uppercase"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-secondary-700">
+                        Driver name <span className="font-normal text-secondary-400">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={driverName}
+                        onChange={e => setDriverName(e.target.value)}
+                        placeholder="e.g. Ramesh (or your name if you drive)"
+                        className="!rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-secondary-700">
+                        Driver's number {!numberRequired && <span className="font-normal text-secondary-400">(optional)</span>}
+                      </label>
+                      <PhoneInput value={phone} onChange={setPhone} required={numberRequired} ariaLabel="Driver's number" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-secondary-500">
+                    {numberRequired
+                      ? "The driver's number is shown only to you and the students whose request you accept."
+                      : `Optional for ${vehicleType === 'Auto' ? 'an auto' : 'your own car'}. If you add it, only you and accepted students see it.`}
+                  </p>
+
+                  {/* New driver: offer to add them to the community directory */}
+                  {!picked && !keptDriverId && !canSaveToDirectory && !ownCar && (
+                    <p className="rounded-xl bg-secondary-50 px-3 py-2 text-xs text-secondary-600">
+                      Add the driver's 10-digit number to save them to the TagAlong driver directory.
+                    </p>
+                  )}
+                  {!picked && !keptDriverId && canSaveToDirectory && (
+                    <div className="space-y-2 rounded-xl bg-secondary-50 p-3">
+                      <label className="flex items-start gap-2 text-sm text-secondary-800">
+                        <input
+                          type="checkbox"
+                          checked={saveToDirectory}
+                          onChange={e => setSaveToDirectory(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 accent-primary-600"
+                        />
+                        <span>
+                          Add this driver to the TagAlong driver directory
+                          <span className="block text-xs text-secondary-500">
+                            Other students can then find and contact them. Untick if you're driving yourself.
+                          </span>
+                        </span>
+                      </label>
+                      {saveToDirectory && (
+                        <select value={relationship} onChange={e => setRelationship(e.target.value)} className="!rounded-xl !py-2">
+                          {RELATIONSHIPS.map(r => (
+                            <option key={r.value} value={r.value}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-secondary-700">
+                      Notes <span className="font-normal text-secondary-400">(optional)</span>
+                    </label>
+                    <textarea
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      rows={2}
+                      maxLength={300}
+                      placeholder="Meeting point, luggage space, stops on the way..."
+                      className="!rounded-xl"
+                    />
+                  </div>
+                </section>
+              </>
+            )}
           </>
         )}
 
@@ -580,8 +716,10 @@ export function CreateRidePage() {
             ? 'Save changes'
             : converting
             ? 'Save driver & update ride'
-            : mode === 'group'
+            : postsAsGroup
             ? 'Post & find travellers'
+            : picked && mode === 'group'
+            ? `Post ride with ${picked.driver.name.split(' ')[0]}`
             : 'Post ride'}
         </button>
       </form>

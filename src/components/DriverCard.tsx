@@ -8,9 +8,10 @@ interface DriverCardProps {
   selected?: boolean
   mine?: boolean
   availability?: Availability | null // already booked through TagAlong
+  tag?: string // e.g. "Auto-assigned"
 }
 
-export function DriverCard({ item, onClick, selected, mine, availability }: DriverCardProps) {
+export function DriverCard({ item, onClick, selected, mine, availability, tag }: DriverCardProps) {
   const { driver, routeQuote, latestQuote } = item
   const quote = routeQuote || latestQuote
 
@@ -27,8 +28,8 @@ export function DriverCard({ item, onClick, selected, mine, availability }: Driv
       </span>
 
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate font-semibold text-secondary-900">{driver.name}</span>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="break-words font-semibold text-secondary-900">{driver.name}</span>
           {availability && (
             <span
               className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -37,6 +38,9 @@ export function DriverCard({ item, onClick, selected, mine, availability }: Driv
             >
               <CalendarClock size={11} /> {availability.badge}
             </span>
+          )}
+          {tag && (
+            <span className="shrink-0 rounded-full bg-primary-600 px-2 py-0.5 text-[10px] font-semibold text-white">{tag}</span>
           )}
           {mine && (
             <span className="shrink-0 rounded-full bg-secondary-100 px-2 py-0.5 text-[10px] font-semibold text-secondary-600">

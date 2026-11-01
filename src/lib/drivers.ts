@@ -315,6 +315,8 @@ export function driverAvailability(
 
   const next = mine[0]
   const when = formatDateLabel(next.date)
+  const isToday = next.date === todayString()
+  const isTomorrow = next.date === todayString(new Date(Date.now() + 86400000))
   const more = mine.length > 1 ? ` (+${mine.length - 1} more)` : ''
   const startedAgo = Date.now() - rideDateTime(next).getTime()
   if (startedAgo >= 0) {
@@ -325,8 +327,8 @@ export function driverAvailability(
     }
   }
   return {
-    level: when === 'Today' ? 'clash' : 'booked',
-    badge: `Booked ${when === 'Today' || when === 'Tomorrow' ? when.toLowerCase() : when} · ${formatTime(next.departure_time)}`,
+    level: isToday ? 'clash' : 'booked',
+    badge: `Booked ${isToday ? 'today' : isTomorrow ? 'tomorrow' : when} · ${formatTime(next.departure_time)}`,
     detail: `Next TagAlong ride: ${when}, ${formatTime(next.departure_time)}, ${route(next)}${more}.`
   }
 }

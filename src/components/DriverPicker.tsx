@@ -14,7 +14,7 @@ import {
   fetchQuotes,
   rankDrivers
 } from '../lib/drivers'
-import { Place } from '../lib/places'
+import { Place, distanceKm } from '../lib/places'
 
 interface DriverPickerProps {
   from?: Place | null
@@ -25,10 +25,53 @@ interface DriverPickerProps {
   preselectId?: string | null // e.g. coming from a driver's profile
   date?: string // the ride's date/time, to flag drivers already booked then
   time?: string
+  // Auto-assign: report the best available driver for this route whenever it changes
+  onAutoBest?: (item: RankedDriver | null) => void
+  selectedTag?: string // label on the selected card, e.g. "Auto-assigned"
+}
+
+// How far a recorded trip's ends are from the ride being posted (km; unknown counts as far)
+function quoteOffsetKm(q: DriverQuote, from: Place, to: Place): number {
+  const a = distanceKm({ lat: q.origin_lat, lng: q.origin_lng }, from)
+  const b = distanceKm({ lat: q.destination_lat, lng: q.destination_lng }, to)
+  return (a ?? 50) + (b ?? 50)
+}
+
+// The driver to assign automatically: has a recorded price for this route (so the fare
+// is known) and isn't booked through TagAlong close to this time. Among those, the most
+// trusted (students travelled + vouches); if equally trusted, the one whose recorded
+// trip is closest to this one (e.g. a T1 price beats a T3 price for a T1 ride).
+export function bestAvailableDriver(
+  ranked: RankedDriver[],
+  bookings: DriverBooking[],
+  from?: Place | null,
+  to?: Place | null,
+  date?: string,
+  time?: string
+): RankedDriver | null {
+  if (!from?.name || !to?.name) return null
+  const free = ranked.filter(r => r.routeQuote && driverAvailability(bookings, r.driver.id, date, time)?.level !== 'clash')
+  const trust = (r: RankedDriver) => r.driver.unique_students + r.driver.vouch_count
+  return (
+    free.sort(
+      (a, b) => trust(b) - trust(a) || quoteOffsetKm(a.routeQuote!, from, to) - quoteOffsetKm(b.routeQuote!, from, to)
+    )[0] || null
+  )
 }
 
 // "Select your driver": drivers IIM Rohtak students have used, best fit for the route first
-export function DriverPicker({ from, to, userId, selectedId, onSelect, preselectId, date, time }: DriverPickerProps) {
+export function DriverPicker({
+  from,
+  to,
+  userId,
+  selectedId,
+  onSelect,
+  preselectId,
+  date,
+  time,
+  onAutoBest,
+  selectedTag
+}: DriverPickerProps) {
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [quotes, setQuotes] = useState<DriverQuote[]>([])
   const [bookings, setBookings] = useState<DriverBooking[]>([])
@@ -50,6 +93,12 @@ export function DriverPicker({ from, to, userId, selectedId, onSelect, preselect
 
   const ranked = useMemo(() => rankDrivers(drivers, quotes, from, to), [drivers, quotes, from, to])
 
+  const best = useMemo(() => bestAvailableDriver(ranked, bookings, from, to, date, time), [ranked, bookings, from, to, date, time])
+  useEffect(() => {
+    if (!loading && onAutoBest) onAutoBest(best)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, best?.driver.id, best?.routeQuote?.id])
+
   // Pre-select a driver chosen elsewhere (only once the list has loaded)
   useEffect(() => {
     if (preselectId && !selectedId) {
@@ -67,7 +116,8 @@ export function DriverPicker({ from, to, userId, selectedId, onSelect, preselect
     : ranked
   const mine = filtered.filter(r => r.driver.added_by_user_id === userId)
   const others = filtered.filter(r => r.driver.added_by_user_id !== userId)
-  const ordered = [...mine, ...others]
+  // the chosen driver always shows first, then drivers you added, then everyone else
+  const ordered = [...mine, ...others].sort((a, b) => Number(b.driver.id === selectedId) - Number(a.driver.id === selectedId))
   const visible = showAll || q ? ordered : ordered.slice(0, 4)
 
   if (loading) return <p className="py-4 text-center text-sm text-secondary-500">Loading community drivers...</p>
@@ -101,6 +151,7 @@ export function DriverPicker({ from, to, userId, selectedId, onSelect, preselect
           item={item}
           mine={item.driver.added_by_user_id === userId}
           selected={item.driver.id === selectedId}
+          tag={item.driver.id === selectedId ? selectedTag : undefined}
           availability={driverAvailability(bookings, item.driver.id, date, time)}
           onClick={() => onSelect(item.driver.id === selectedId ? null : item)}
         />

@@ -65,6 +65,9 @@ const POSTED_MESSAGES: Record<string, string> = {
   ride: 'Ride posted! It is now visible to IIM Rohtak students travelling your way.',
   group: 'Travel request posted! Students going your way can now join your group.',
   converted: 'Driver added. Your group is now a ride and the fare will be split automatically.',
+  assigned:
+    "Ride posted with a community driver assigned automatically. Call him from the driver box below to confirm he's free before students join.",
+  picked: "Ride posted with the driver you chose. Call him from the driver box below to confirm he's free.",
   edited: 'Changes saved. Everyone on the ride can see the new details.'
 }
 
