@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { Layout } from './components/Layout'
@@ -15,6 +16,14 @@ import { DriversPage } from './pages/DriversPage'
 import { DriverProfilePage } from './pages/DriverProfilePage'
 import { AddDriverPage } from './pages/AddDriverPage'
 import { AdminPage } from './pages/AdminPage'
+
+// The dashboard (and its chart library) only downloads when an admin opens it
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })))
+const Loading = () => (
+  <div className="flex h-[60vh] items-center justify-center">
+    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+  </div>
+)
 
 function AppContent() {
   const { user, loading } = useAuth()
@@ -53,6 +62,14 @@ function AppContent() {
           <Route path="/trips" element={<MyTripsPage />} />
           <Route path="/campus-cabs" element={<CampusCabsPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route
+            path="/admin/dashboard"
+            element={
+              <Suspense fallback={<Loading />}>
+                <AdminDashboardPage />
+              </Suspense>
+            }
+          />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

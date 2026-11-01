@@ -18,6 +18,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { RideChat } from '../components/RideChat'
 import { RideWhen } from '../components/RideWhen'
+import { TripRating } from '../components/TripRating'
 import { bookCampusCab, leaveCampusCab } from '../lib/campusCabs'
 import { LiveTripPanel } from '../components/LiveTripPanel'
 import { Driver, fetchDrivers } from '../lib/drivers'
@@ -480,6 +481,11 @@ export function RideDetailsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Rate the trip: everyone who was on it, once it has left (not while it's still in progress) */}
+      {isMember && user && departed && !isClosed(ride) && phase !== 'in_progress' && mine?.trip_confirmed !== false && (
+        <TripRating rideId={ride.id} userId={user.id} />
       )}
 
       {cab && !isClosed(ride) && (

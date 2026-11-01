@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ShieldAlert, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, BarChart3, CheckCircle2, ExternalLink, RefreshCw, ShieldAlert, Wrench, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { CabScheduleAdmin } from '../components/CabScheduleAdmin'
 import { Ride, formatDateLabel, formatRupees, formatTime, rideDateTime, ridePhase, shortPlace } from '../lib/rides'
@@ -153,13 +153,21 @@ export function AdminPage() {
           <h1 className="text-2xl font-bold text-secondary-900">Admin dashboard</h1>
           <p className="text-sm text-secondary-600">Health of the app, and tools to fix problems. Chat messages stay private.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          className="flex items-center gap-1.5 rounded-xl border border-secondary-300 px-3 py-2 text-sm font-medium hover:bg-secondary-50"
-        >
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/admin/dashboard"
+            className="flex items-center gap-1.5 rounded-xl bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+          >
+            <BarChart3 size={14} /> Live dashboard
+          </Link>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className="flex items-center gap-1.5 rounded-xl border border-secondary-300 px-3 py-2 text-sm font-medium hover:bg-secondary-50"
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {notice && <div className="mb-3 rounded-xl bg-primary-50 px-4 py-3 text-sm text-primary-800">{notice}</div>}
