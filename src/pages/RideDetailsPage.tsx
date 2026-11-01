@@ -18,6 +18,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { RideChat } from '../components/RideChat'
 import { RideWhen } from '../components/RideWhen'
+import { TripTime } from '../components/TripTime'
 import { TripRating } from '../components/TripRating'
 import { bookCampusCab, leaveCampusCab } from '../lib/campusCabs'
 import { LiveTripPanel } from '../components/LiveTripPanel'
@@ -525,6 +526,8 @@ export function RideDetailsPage() {
             {left > 0 ? `${left} seat${left > 1 ? 's' : ''} left` : 'Full'}
           </span>
         </div>
+
+        <TripTime ride={ride} />
 
         <div className="mt-5 flex gap-3">
           <div className="flex flex-col items-center pt-1.5">

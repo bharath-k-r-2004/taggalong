@@ -1,8 +1,9 @@
 import { Suspense, lazy, useState } from 'react'
+import { useRouteEstimate } from '../lib/eta'
 import { Car, CheckCircle2, MessageCircle, Phone, Share2, Siren, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getCurrentPosition } from '../lib/places'
-import { Ride, clockTime, estimatedArrival, formatTime, isPastExpectedArrival, myParticipation } from '../lib/rides'
+import { Ride, clockTime, estimatedArrival, formatTime, isPastExpectedArrival, myParticipation, rideDateTime } from '../lib/rides'
 
 interface LiveTripPanelProps {
   ride: Ride
@@ -40,7 +41,10 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
   const [sosNote, setSosNote] = useState<string | null>(null)
   const [shareNote, setShareNote] = useState<string | null>(null)
 
-  const eta = estimatedArrival(ride)
+  const [liveEta, setLiveEta] = useState<Date | null>(null)
+  const planned = useRouteEstimate({ lat: ride.origin_lat, lng: ride.origin_lng }, { lat: ride.destination_lat, lng: ride.destination_lng })
+  const plannedEta = planned ? new Date(rideDateTime(ride).getTime() + planned.minutes * 60000) : estimatedArrival(ride)
+  const eta = liveEta ?? plannedEta
   const overdue = isPastExpectedArrival(ride)
   const mine = myParticipation(ride, userId)
   const companions = [
@@ -110,7 +114,7 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
       </div>
       <p className="mt-1 text-sm text-secondary-600">
         Left at {formatTime(ride.departure_time)}
-        {eta && <> · expected around {clockTime(eta)} (rough estimate)</>}
+        {eta && <> · expected around {clockTime(eta)} ({liveEta ? 'live, from where you are' : planned?.routed ? 'estimate from the route' : 'rough estimate'})</>}
       </p>
       {overdue && (
         <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -163,7 +167,7 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
       {shareNote && <p className="mt-2 text-xs text-secondary-500">{shareNote}</p>}
 
       <Suspense fallback={<p className="mt-4 text-center text-sm text-secondary-500">Loading map...</p>}>
-        <LiveMap ride={ride} userId={userId} names={names} onArrived={arrivedByGps} />
+        <LiveMap ride={ride} userId={userId} names={names} onArrived={arrivedByGps} onEta={setLiveEta} />
       </Suspense>
 
       {/* SOS */}

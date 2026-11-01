@@ -4,7 +4,8 @@ import 'leaflet/dist/leaflet.css'
 import { LocateFixed, LocateOff, MapPin } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { distanceKm } from '../lib/places'
-import { Ride } from '../lib/rides'
+import { useNow, useRouteEstimate } from '../lib/eta'
+import { Ride, clockTime, formatDuration } from '../lib/rides'
 
 // Live trip map: OpenStreetMap tiles (free, no key) + each rider's phone GPS,
 // shared only with the people on this ride and deleted soon after the trip.
@@ -14,6 +15,7 @@ interface LiveMapProps {
   userId: string
   names: Record<string, string> // user id -> first name
   onArrived: () => void // my phone reached the destination
+  onEta?: (arrival: Date | null) => void // live arrival time, worked out from where the cab is now
 }
 
 interface Position {
@@ -47,7 +49,7 @@ const writePref = (rideId: string, on: boolean) => {
 
 const minutesAgo = (iso: string) => Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
 
-export default function LiveMap({ ride, userId, names, onArrived }: LiveMapProps) {
+export default function LiveMap({ ride, userId, names, onArrived, onEta }: LiveMapProps) {
   const mapEl = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
   const layer = useRef<L.LayerGroup | null>(null)
@@ -223,6 +225,18 @@ export default function LiveMap({ ride, userId, names, onArrived }: LiveMapProps
 
   const others = positions.filter(p => p.user_id !== userId).length
 
+  // Live arrival time: from the freshest shared position (the cab moves with its riders) to the drop point
+  const now = useNow(30000)
+  const fresh = [...positions].filter(p => now - new Date(p.updated_at).getTime() < 15 * 60000).sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]
+  const route = useRouteEstimate(fresh, dest, { refreshMs: 2 * 60000, grid: 2 })
+  const remaining = route ? Math.max(0, Math.round(route.minutes - (now - route.at) / 60000)) : null
+  const arrival = remaining !== null ? new Date(now + remaining * 60000) : null
+  const arrivalMs = arrival ? Math.round(arrival.getTime() / 60000) : null
+  useEffect(() => {
+    onEta?.(arrivalMs === null ? null : new Date(arrivalMs * 60000))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivalMs])
+
   return (
     <div className="mt-4">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -233,6 +247,25 @@ export default function LiveMap({ ride, userId, names, onArrived }: LiveMapProps
           {others === 0 ? 'Nobody else sharing yet' : `${others} other${others > 1 ? 's' : ''} sharing`}
         </span>
       </div>
+      {dest && (
+        <div className="mb-2 rounded-xl bg-primary-50 px-3 py-2">
+          {remaining !== null && arrival ? (
+            <>
+              <p className="text-sm font-semibold text-primary-900">
+                {remaining <= 2 ? 'Almost there' : `Arriving in about ${formatDuration(remaining)}`}
+                <span className="font-normal text-primary-800"> · around {clockTime(arrival)}</span>
+              </p>
+              <p className="text-xs text-primary-800">
+                {route && route.km >= 1 ? `${Math.round(route.km)} km to go · ` : ''}
+                from {fresh?.user_id === userId ? 'your' : `${names[fresh?.user_id ?? ''] || 'a rider'}'s`} location {minutesAgo(fresh!.updated_at) === 0 ? 'now' : `${minutesAgo(fresh!.updated_at)} min ago`}
+                {route && !route.routed && ' · rough estimate'}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-primary-900">Share your live location to see how long until you arrive.</p>
+          )}
+        </div>
+      )}
       <div ref={mapEl} className="relative z-0 h-64 w-full overflow-hidden rounded-xl border border-secondary-200" />
       {positions.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-secondary-700">
