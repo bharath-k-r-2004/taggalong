@@ -30,6 +30,7 @@ export const POPULAR_PLACES: Preset[] = [
   { name: 'New Delhi Railway Station', address: 'Paharganj, New Delhi', lat: 28.6423, lng: 77.2195, keywords: ['delhi', 'new delhi', 'ndls', 'railway', 'station', 'train'] },
   { name: 'Hazrat Nizamuddin Railway Station', address: 'South East Delhi', lat: 28.588, lng: 77.2531, keywords: ['delhi', 'nizamuddin', 'railway', 'station', 'train'] },
   { name: 'Kashmere Gate ISBT', address: 'Delhi', lat: 28.6687, lng: 77.2304, keywords: ['delhi', 'kashmere', 'kashmiri', 'isbt', 'bus'] },
+  { name: 'Connaught Place, New Delhi', address: 'Central Delhi', lat: 28.6315, lng: 77.2167, keywords: ['connaught', 'cp', 'rajiv chowk', 'central delhi'] },
   { name: 'Bahadurgarh', address: 'Haryana', lat: 28.6933, lng: 76.9332, keywords: ['bahadurgarh'] },
   { name: 'Gurugram (Cyber City)', address: 'Gurugram, Haryana', lat: 28.4979, lng: 77.0887, keywords: ['gurugram', 'gurgaon', 'cyber city', 'cyber hub'] },
   { name: 'Sonipat', address: 'Haryana', lat: 28.9954, lng: 77.0234, keywords: ['sonipat', 'sonepat'] },

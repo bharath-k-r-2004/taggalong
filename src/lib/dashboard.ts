@@ -2,6 +2,7 @@
 // returns (admin_dashboard), for the period the admin picks. One definition per number.
 import { supabase } from './supabase'
 import { rideDateTime, shortPlace, todayString } from './rides'
+import type { FeedbackRow, RatingRow } from './feedback'
 
 export interface DRide {
   id: string
@@ -18,6 +19,7 @@ export interface DRide {
   driver_id: string | null
   creator_id: string
   vehicle_type: string | null
+  seeded?: boolean
 }
 export interface DParticipant {
   ride_id: string
@@ -41,12 +43,7 @@ export interface DDriver {
   vehicle_type: string | null
   quotes: number
 }
-export interface DRating {
-  ride_id: string
-  user_id: string
-  rating: number
-  created_at: string
-}
+export type DRating = RatingRow
 export interface DashboardData {
   generated_at: string
   rides: DRide[]
@@ -54,6 +51,7 @@ export interface DashboardData {
   users: DUser[]
   drivers: DDriver[]
   ratings: DRating[]
+  feedback: FeedbackRow[]
   messages: { day: string; n: number }[]
 }
 

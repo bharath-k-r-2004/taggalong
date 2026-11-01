@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, Car, Search, UserCheck } from 'lucide-react'
+import { ArrowRight, Car, MessageSquare, Search, UserCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { RideCard } from '../components/RideCard'
 import { CampusCabs } from '../components/CampusCabs'
@@ -123,6 +123,24 @@ export function HomePage() {
           <span className="flex-1">
             <span className="block font-semibold text-secondary-900">Find a driver</span>
             <span className="block text-sm text-secondary-600">Drivers IIM Rohtak students have travelled with, with recent route prices.</span>
+          </span>
+          <ArrowRight size={18} className="text-primary-600" />
+        </button>
+      </div>
+
+      {/* Anonymous feedback */}
+      <div className="px-4 pt-3">
+        <button
+          type="button"
+          onClick={() => navigate('/feedback')}
+          className="flex w-full items-center gap-3 rounded-2xl border border-secondary-200 bg-white p-4 text-left shadow-sm transition hover:border-primary-400"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+            <MessageSquare size={22} />
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold text-secondary-900">Share anonymous feedback</span>
+            <span className="block text-sm text-secondary-600">Tell us what to fix or keep. See what other students are saying.</span>
           </span>
           <ArrowRight size={18} className="text-primary-600" />
         </button>

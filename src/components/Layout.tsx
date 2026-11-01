@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
-import { Bus, Home, MapPin, PlusCircle, Search, User, UserCheck } from 'lucide-react'
+import { Bus, Home, MapPin, MessageSquare, PlusCircle, Search, User, UserCheck } from 'lucide-react'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Home', icon: Home },
@@ -9,6 +9,8 @@ const NAV_ITEMS = [
   // phones have room for six tabs: Drivers stays in the sidebar and on Home
   { path: '/drivers', label: 'Drivers', icon: UserCheck, desktopOnly: true },
   { path: '/trips', label: 'My Trips', icon: MapPin },
+  // phones reach Feedback from Home and Profile
+  { path: '/feedback', label: 'Feedback', icon: MessageSquare, desktopOnly: true },
   { path: '/profile', label: 'Profile', icon: User }
 ]
 

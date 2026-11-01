@@ -1,6 +1,6 @@
 import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Briefcase, ChevronRight, IndianRupee, RefreshCw, ShieldAlert, Table2, Users, X } from 'lucide-react'
+import { ArrowLeft, Briefcase, ChevronRight, IndianRupee, MessageSquare, RefreshCw, ShieldAlert, Table2, Users, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
   DashboardData,
@@ -22,17 +22,19 @@ import {
   weeklySeries
 } from '../lib/dashboard'
 import { formatDateLabel, formatTime } from '../lib/rides'
-import { ChartCard, Empty, KpiTile, RankBars, SERIES, Spark, TimeBars, Trend } from '../components/dashboard/Charts'
+import { ChartCard, Empty, KpiTile, LikertBars, LikertLegend, RankBars, SERIES, Spark, TimeBars, Trend } from '../components/dashboard/Charts'
+import { LIKERT, MOODS, PARAMS, TONE_LABELS, THEMES, Tone, ParamKey, average, categoryLabel, summariseParams, summariseThemes, toneOf } from '../lib/feedback'
 
-type Section = 'overview' | 'business' | 'customer' | 'financial'
+type Section = 'overview' | 'business' | 'customer' | 'financial' | 'feedback'
 const SECTIONS: { key: Exclude<Section, 'overview'>; title: string; icon: typeof Briefcase; blurb: string }[] = [
   { key: 'business', title: 'Business', icon: Briefcase, blurb: 'Rides, matching, routes, demand and drivers' },
   { key: 'customer', title: 'Customer', icon: Users, blurb: 'Students on the network, activity, retention and ratings' },
-  { key: 'financial', title: 'Financial', icon: IndianRupee, blurb: 'Fares, commission, pipeline and student savings' }
+  { key: 'financial', title: 'Financial', icon: IndianRupee, blurb: 'Fares, commission, pipeline and student savings' },
+  { key: 'feedback', title: 'Feedback', icon: MessageSquare, blurb: 'Ratings on seven parameters, anonymous feedback and what to improve' }
 ]
 
 // What a click on a chart drills into
-type FocusKind = 'week' | 'outcome' | 'route' | 'hour' | 'driver' | 'mix' | 'signups' | 'cohort' | 'rating' | 'commission' | 'all'
+type FocusKind = 'week' | 'outcome' | 'route' | 'hour' | 'driver' | 'mix' | 'signups' | 'cohort' | 'rating' | 'commission' | 'param' | 'tone' | 'fcat' | 'theme' | 'all'
 interface Focus {
   kind: FocusKind
   key: string
@@ -93,6 +95,44 @@ export function AdminDashboardPage() {
   )
   const weeks = useMemo(() => (data && period ? weeklySeries(data, facts, period.start, Math.max(now, ...facts.map(f => f.when)), rate) : []), [data, facts, period, rate]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // feedback analysis for the chosen period
+  const fb = useMemo(() => {
+    if (!data || !period) return null
+    const rideIds = new Set(facts.filter(f => f.when >= period.start).map(f => f.ride.id))
+    const ratings = data.ratings.filter(r => rideIds.has(r.ride_id))
+    const feedback = (data.feedback ?? []).filter(f => new Date(f.created_at).getTime() >= period.start)
+    const scores = summariseParams(ratings)
+    const themes = summariseThemes(feedback)
+    const tones: Record<Tone, number> = { praise: 0, suggestion: 0, concern: 0 }
+    for (const f of feedback) tones[toneOf(f)]++
+    const byWeek = new Map<string, typeof ratings>()
+    for (const r of ratings) {
+      const k = weekOf(new Date(r.created_at).getTime())
+      byWeek.set(k, [...(byWeek.get(k) || []), r])
+    }
+    const mean = (rs: typeof ratings, k: 'rating' | ParamKey) => average(rs.map(r => r[k]).filter((v): v is number => typeof v === 'number'))
+    const trend = [...byWeek.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([week, rs]) => ({ week, label: weekLabel(week), overall: mean(rs, 'rating'), punctuality: mean(rs, 'punctuality'), value: mean(rs, 'value_for_money') }))
+    const riders = facts.filter(f => f.outcome === 'completed' && f.when >= period.start).reduce((s, f) => s + f.riders, 0)
+    const seeded = { feedback: feedback.filter(f => f.seeded).length, ratings: ratings.filter(r => r.seeded).length }
+    return {
+      ratings,
+      feedback,
+      scores,
+      themes,
+      tones,
+      trend,
+      seeded,
+      overall: mean(ratings, 'rating'),
+      recommend: scores.find(p => p.param.key === 'recommend')?.agree ?? null,
+      avgMood: average(feedback.map(f => f.mood)),
+      response: riders ? ratings.length / riders : null,
+      lowest: scores.filter(p => p.mean !== null && p.param.key !== 'recommend').sort((a, b) => a.mean! - b.mean!).slice(0, 2),
+      improve: [...themes].sort((a, b) => b.suggestion + b.concern - (a.suggestion + a.concern)).filter(t => t.suggestion + t.concern > 0).slice(0, 4)
+    }
+  }, [data, period, facts])
+
   if (allowed === null || (allowed && !data && !error)) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -108,7 +148,7 @@ export function AdminDashboardPage() {
       </div>
     )
   }
-  if (!data || !m || !period) return <p className="p-6 text-red-700">{error}</p>
+  if (!data || !m || !period || !fb) return <p className="p-6 text-red-700">{error}</p>
 
   // rides in the chosen period (same rule as the metrics)
   const inPeriod = facts.filter(f => (f.when >= period.start && f.when < period.end) || f.when >= period.end)
@@ -217,7 +257,7 @@ export function AdminDashboardPage() {
               <KpiTile big label="Average rating" value={m.avgRating === null ? '–' : `${m.avgRating.toFixed(1)} ★`} note={m.ratingsCount ? `${m.ratingsCount} ratings` : 'No ratings yet'} onClick={() => go('customer')} definition="Average of the 1-5 star ratings riders give after a trip." />
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <SectionCard title="Business" blurb={SECTIONS[0].blurb} onOpen={() => go('business')} spark={<Spark data={weeks} k="booked" name="Rides booked" />} stats={[
                 ['Rides posted', String(m.posted)],
                 ['Match rate', pct(m.matchRate)],
@@ -232,6 +272,11 @@ export function AdminDashboardPage() {
                 ['Completed fares', inr(m.gmv)],
                 ['Avg fare', m.avgFare === null ? '–' : inr(m.avgFare)],
                 ['Student savings', inr(m.savings)]
+              ]} />
+              <SectionCard title="Feedback" blurb={SECTIONS[3].blurb} onOpen={() => go('feedback')} spark={fb.trend.length ? <Spark data={fb.trend} k="overall" name="Average rating" fmt={v => v.toFixed(1)} /> : <div className="h-14" />} stats={[
+                ['Average rating', fb.overall === null ? '–' : `${fb.overall.toFixed(1)} ★`],
+                ['Would recommend', pct(fb.recommend)],
+                ['Anonymous notes', String(fb.feedback.length)]
               ]} />
             </div>
 
@@ -374,15 +419,164 @@ export function AdminDashboardPage() {
           </>
         )}
 
+        {section === 'feedback' && (
+          <>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <KpiTile label="Overall rating" value={fb.overall === null ? '–' : `${fb.overall.toFixed(2)} ★`} note={`${fb.ratings.length} trip ratings`} definition="Average of the 1-5 stars riders gave their trip." onClick={() => go('feedback', { kind: 'param', key: 'punctuality' })} />
+              <KpiTile label="Would recommend" value={pct(fb.recommend)} note="agree or strongly agree" definition="Share of riders who agreed or strongly agreed: I would recommend TagAlong to a friend." />
+              <KpiTile label="Rating response" value={pct(fb.response)} note="of riders rated their trip" definition="Trip ratings ÷ people on board on completed trips." />
+              <KpiTile label="Anonymous feedback" value={String(fb.feedback.length)} note={fb.avgMood === null ? undefined : `${fb.avgMood.toFixed(1)} / 5 average mood`} onClick={() => go('feedback', { kind: 'tone', key: 'all' })} />
+            </div>
+
+            {/* The analysis, in words */}
+            <section className="rounded-2xl border border-primary-200 bg-primary-50/60 p-5">
+              <h3 className="font-semibold text-secondary-900">What the feedback tells us</h3>
+              {fb.ratings.length + fb.feedback.length === 0 ? (
+                <p className="mt-1 text-sm text-secondary-600">No ratings or feedback yet in this period.</p>
+              ) : (
+                <ul className="mt-2 space-y-1.5 text-sm text-secondary-800">
+                  {fb.scores.some(p => p.mean !== null) && (
+                    <li>
+                      <span className="font-semibold text-primary-800">Strongest:</span>{' '}
+                      {[...fb.scores].filter(p => p.mean !== null).sort((a, b) => b.mean! - a.mean!).slice(0, 2).map(p => `${p.param.label} (${p.mean!.toFixed(1)}/5)`).join(' and ')}.
+                    </li>
+                  )}
+                  {fb.lowest.length > 0 && (
+                    <li>
+                      <span className="font-semibold text-amber-800">Improve first:</span> {fb.lowest.map(p => `${p.param.label} (${p.mean!.toFixed(1)}/5)`).join(' and ')}.
+                    </li>
+                  )}
+                  {fb.feedback.length > 0 && (
+                    <li>
+                      <span className="font-semibold text-primary-800">Anonymous notes:</span> {Math.round((fb.tones.praise / fb.feedback.length) * 100)}% praise, {Math.round((fb.tones.suggestion / fb.feedback.length) * 100)}% suggestions,{' '}
+                      {Math.round((fb.tones.concern / fb.feedback.length) * 100)}% concerns.
+                    </li>
+                  )}
+                  {fb.improve.length > 0 && (
+                    <li>
+                      <span className="font-semibold text-amber-800">Most requested:</span> {fb.improve.slice(0, 3).map(t => `${t.theme.label.toLowerCase()} (${t.suggestion + t.concern})`).join(', ')}.
+                    </li>
+                  )}
+                </ul>
+              )}
+            </section>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ChartCard title="How riders scored us" subtitle="Share of riders at each point of the 5-point scale" hint="Click a bar to see the trips that scored 3 or below">
+                <LikertLegend names={LIKERT} />
+                <LikertBars rows={fb.scores.map(p => ({ key: p.param.key, label: p.param.label, dist: p.dist }))} names={LIKERT} onSelect={k => go('feedback', { kind: 'param', key: k })} />
+              </ChartCard>
+              <ChartCard title="Scorecard" subtitle="Average out of 5, best first" hint="Click a bar to see the low-scoring trips">
+                <RankBars
+                  name="Average"
+                  fmt={v => v.toFixed(2)}
+                  data={[...fb.scores].filter(p => p.mean !== null).sort((a, b) => b.mean! - a.mean!).map(p => ({ key: p.param.key, label: p.param.label, value: Number(p.mean!.toFixed(2)) }))}
+                  selected={focus?.kind === 'param' ? focus.key : null}
+                  onSelect={k => go('feedback', { kind: 'param', key: k })}
+                />
+              </ChartCard>
+              <ChartCard title="Rating trend" subtitle="Weekly average out of 5" hint="Hover to compare the week's scores">
+                {fb.trend.length > 1 ? (
+                  <Trend
+                    data={fb.trend}
+                    x="label"
+                    yDomain={[1, 5]}
+                    fmt={v => v.toFixed(1)}
+                    series={[
+                      { key: 'overall', name: 'Overall' },
+                      { key: 'punctuality', name: 'Punctuality' },
+                      { key: 'value', name: 'Value for money' }
+                    ]}
+                  />
+                ) : (
+                  <Empty>The trend appears once ratings span two or more weeks.</Empty>
+                )}
+              </ChartCard>
+              <ChartCard title="Average rating by route" subtitle="Stars, trips in this period" hint="Click a route to see its trips">
+                {(() => {
+                  const rows = countBy(inPeriod.filter(f => f.rating !== null), f => f.route)
+                    .map(r => ({ key: r.key, value: Number((average(inPeriod.filter(f => f.route === r.key && f.rating !== null).map(f => f.rating as number)) ?? 0).toFixed(2)) }))
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 8)
+                  return rows.length ? <RankBars name="Average rating" fmt={v => v.toFixed(2)} data={rows} onSelect={k => go('feedback', { kind: 'route', key: k })} /> : <Empty>No rated trips yet.</Empty>
+                })()}
+              </ChartCard>
+              <ChartCard title="Anonymous feedback" subtitle="Praise, suggestions and concerns" hint="Click a bar to read the messages">
+                {fb.feedback.length ? (
+                  <RankBars
+                    name="Messages"
+                    data={(['praise', 'suggestion', 'concern'] as Tone[]).map(t => ({ key: t, label: TONE_LABELS[t], value: fb.tones[t] }))}
+                    selected={focus?.kind === 'tone' ? focus.key : null}
+                    onSelect={k => go('feedback', { kind: 'tone', key: k })}
+                  />
+                ) : (
+                  <Empty>No anonymous feedback yet.</Empty>
+                )}
+              </ChartCard>
+              <ChartCard title="Feedback by topic" subtitle="What students write about" hint="Click a topic to read the messages">
+                {fb.feedback.length ? (
+                  <RankBars
+                    name="Messages"
+                    color={SERIES[1]}
+                    data={countBy(fb.feedback, f => f.category).map(r => ({ key: r.key, label: categoryLabel(r.key), value: r.value }))}
+                    selected={focus?.kind === 'fcat' ? focus.key : null}
+                    onSelect={k => go('feedback', { kind: 'fcat', key: k })}
+                  />
+                ) : (
+                  <Empty>No anonymous feedback yet.</Empty>
+                )}
+              </ChartCard>
+            </div>
+
+            <ChartCard title="Themes in the feedback" subtitle="Found by keywords in the messages. Longest bars are mentioned most" hint="Click a theme to read the messages">
+              {fb.themes.length ? (
+                <ul className="space-y-2">
+                  {[...fb.themes].sort((a, b) => b.mentions - a.mentions).map(t => {
+                    const max = Math.max(...fb.themes.map(x => x.mentions))
+                    const w = (n: number) => `${(n / max) * 100}%`
+                    return (
+                      <li key={t.theme.key}>
+                        <button type="button" onClick={() => go('feedback', { kind: 'theme', key: t.theme.key })} className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-primary-50 ${focus?.kind === 'theme' && focus.key === t.theme.key ? 'bg-primary-50' : ''}`}>
+                          <span className="w-44 shrink-0 text-sm text-secondary-800">{t.theme.label}</span>
+                          <span className="flex h-3 flex-1 overflow-hidden rounded-full bg-secondary-100" title={`${t.praise} praise · ${t.suggestion} suggestions · ${t.concern} concerns`}>
+                            <span style={{ width: w(t.praise), background: SERIES[0] }} />
+                            <span style={{ width: w(t.suggestion), background: '#eda100' }} />
+                            <span style={{ width: w(t.concern), background: '#c2410c' }} />
+                          </span>
+                          <span className="w-8 shrink-0 text-right text-sm font-semibold text-secondary-900">{t.mentions}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                  <li className="flex gap-4 pl-2 pt-1 text-xs text-secondary-500">
+                    <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: SERIES[0] }} /> Praise</span>
+                    <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#eda100' }} /> Suggestions</span>
+                    <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#c2410c' }} /> Concerns</span>
+                  </li>
+                </ul>
+              ) : (
+                <Empty height={120}>No themes yet.</Empty>
+              )}
+            </ChartCard>
+
+            {(fb.seeded.feedback > 0 || fb.seeded.ratings > 0) && (
+              <p className="rounded-xl bg-secondary-100 px-3 py-2 text-xs text-secondary-600">
+                Note for admins: {fb.seeded.ratings} of {fb.ratings.length} ratings and {fb.seeded.feedback} of {fb.feedback.length} messages here are illustrative entries added for the demo (flagged <code>seeded</code> in the database), so they can be removed once real feedback comes in.
+              </p>
+            )}
+          </>
+        )}
+
         {/* Level 3: the rides or students behind a number */}
         {section !== 'overview' && (
           <Detail
-            focus={focus ?? (section === 'customer' ? { kind: 'cohort', key: 'all' } : { kind: 'all', key: 'all' })}
+            focus={focus ?? (section === 'customer' ? { kind: 'cohort', key: 'all' } : section === 'feedback' ? { kind: 'tone', key: 'all' } : { kind: 'all', key: 'all' })}
             explicit={Boolean(focus)}
             data={data}
             facts={inPeriod}
             allFacts={facts}
             rate={rate}
+            since={period.start}
             onClose={() => go(section)}
             onOpenRide={id => navigate(`/ride/${id}`)}
           />
@@ -413,6 +607,14 @@ function focusLabel(f: Focus, data: DashboardData): string {
       return f.key === 'all' ? 'All students' : f.key
     case 'rating':
       return `${f.key}★ trips`
+    case 'param':
+      return `Trips where ${PARAMS.find(p => p.key === f.key)?.label ?? f.key} scored 3 or below`
+    case 'tone':
+      return f.key === 'all' ? 'All anonymous feedback' : TONE_LABELS[f.key as Tone]
+    case 'fcat':
+      return categoryLabel(f.key)
+    case 'theme':
+      return THEMES.find(t => t.key === f.key)?.label ?? f.key
     case 'route':
       return f.key
     default:
@@ -450,6 +652,7 @@ function Detail({
   facts,
   allFacts,
   rate,
+  since,
   onClose,
   onOpenRide
 }: {
@@ -459,6 +662,7 @@ function Detail({
   facts: RideFact[]
   allFacts: RideFact[]
   rate: number
+  since: number
   onClose: () => void
   onOpenRide: (id: string) => void
 }) {
@@ -502,6 +706,44 @@ function Detail({
     )
   }
 
+  if (focus.kind === 'tone' || focus.kind === 'fcat' || focus.kind === 'theme') {
+    const theme = THEMES.find(t => t.key === focus.key)
+    const rows = (data.feedback ?? [])
+      .filter(f => new Date(f.created_at).getTime() >= since)
+      .filter(f => (focus.kind === 'tone' ? focus.key === 'all' || toneOf(f) === focus.key : focus.kind === 'fcat' ? f.category === focus.key : Boolean(theme?.words.test(f.message))))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    return (
+      <DetailFrame title={`${title} · ${rows.length} message${rows.length === 1 ? '' : 's'}`} summary="Anonymous: no names or accounts are stored with feedback." explicit={explicit} onClose={onClose}>
+        {rows.length === 0 ? (
+          <p className="px-3 py-6 text-center text-sm text-secondary-400">No messages here.</p>
+        ) : (
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-secondary-500">
+              <tr>
+                <th className="px-3 py-2">Date</th>
+                <th className="px-3 py-2">Mood</th>
+                <th className="px-3 py-2">Topic</th>
+                <th className="px-3 py-2">Type</th>
+                <th className="px-3 py-2">Message</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-secondary-100">
+              {rows.map(f => (
+                <tr key={f.id} className="align-top">
+                  <td className="whitespace-nowrap px-3 py-2">{new Date(f.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
+                  <td className="px-3 py-2 text-lg" title={MOODS[f.mood - 1]?.label}>{MOODS[f.mood - 1]?.emoji}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{categoryLabel(f.category)}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{TONE_LABELS[toneOf(f)]}</td>
+                  <td className="px-3 py-2">{f.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </DetailFrame>
+    )
+  }
+
   const pick = (f: RideFact) => {
     switch (focus.kind) {
       case 'week':
@@ -520,11 +762,13 @@ function Detail({
         return f.booked && (focus.key === 'cab' ? f.campusCab : !f.campusCab)
       case 'rating':
         return data.ratings.some(r => r.ride_id === f.ride.id && r.rating === Number(focus.key))
+      case 'param':
+        return data.ratings.some(r => r.ride_id === f.ride.id && (r[focus.key as ParamKey] ?? 5) <= 3)
       default:
         return true
     }
   }
-  const source = focus.kind === 'week' || focus.kind === 'commission' || focus.kind === 'rating' ? allFacts : facts
+  const source = focus.kind === 'week' || focus.kind === 'commission' || focus.kind === 'rating' || focus.kind === 'param' ? allFacts : facts
   const rows = source.filter(pick).sort((a, b) => b.when - a.when)
   const fares = rows.filter(r => r.outcome === 'completed').reduce((s, r) => s + r.fare, 0)
 

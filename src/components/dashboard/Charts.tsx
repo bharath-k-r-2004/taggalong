@@ -236,7 +236,8 @@ export function Trend<T extends object>({
   fmt,
   area,
   height = 240,
-  onSelect
+  onSelect,
+  yDomain
 }: {
   data: T[]
   x: keyof T & string
@@ -245,6 +246,7 @@ export function Trend<T extends object>({
   area?: boolean
   height?: number
   onSelect?: (row: T) => void
+  yDomain?: [number, number]
 }) {
   const click = onSelect
     ? (e: { activePayload?: { payload: T }[] } | null) => e?.activePayload?.[0] && onSelect(e.activePayload[0].payload)
@@ -259,7 +261,7 @@ export function Trend<T extends object>({
     <>
       <CartesianGrid vertical={false} stroke={GRID} />
       <XAxis dataKey={x} tick={TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={12} />
-      <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={false} tickFormatter={fmt ? v => fmt(Number(v)) : undefined} width={fmt ? 64 : 40} />
+      <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={Boolean(yDomain)} domain={yDomain} tickFormatter={fmt ? v => fmt(Number(v)) : undefined} width={fmt ? 64 : 40} />
       <Tooltip cursor={{ stroke: '#9ca3af', strokeWidth: 1 }} content={<ChartTooltip fmt={fmt} hint={onSelect ? 'Click to see this week' : undefined} />} />
       {series.length > 1 && <Legend iconType="plainline" iconSize={14} wrapperStyle={{ fontSize: 12, color: '#4b5563' }} />}
     </>
@@ -316,5 +318,87 @@ export function Spark<T extends object>({ data, k, name, fmt }: { data: T[]; k: 
         <Area type="monotone" dataKey={k} name={name} stroke={SERIES[0]} strokeWidth={2} fill={SERIES[0]} fillOpacity={0.12} dot={false} activeDot={{ r: 4 }} />
       </AreaChart>
     </ResponsiveContainer>
+  )
+}
+
+// ---------- Likert: 100% stacked bars, one per statement ----------
+
+// Orange for disagreement, grey for neutral, green for agreement (lightness also changes, so it works without colour)
+export const LIKERT_COLORS = ['#c2410c', '#f0a37f', '#d1d5db', '#7fcf9a', '#16a34a']
+
+export function LikertBars({
+  rows,
+  names,
+  onSelect
+}: {
+  rows: { key: string; label: string; dist: number[] }[]
+  names: readonly string[]
+  onSelect?: (key: string) => void
+}) {
+  const data = rows.map(r => {
+    const n = r.dist.reduce((a, b) => a + b, 0) || 1
+    return {
+      key: r.key,
+      label: r.label,
+      n,
+      ...Object.fromEntries(r.dist.map((c, i) => [`p${i + 1}`, (c / n) * 100])),
+      ...Object.fromEntries(r.dist.map((c, i) => [`c${i + 1}`, c]))
+    } as Record<string, number | string>
+  })
+  const height = Math.max(160, rows.length * 44 + 56)
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} layout="vertical" margin={{ top: 0, right: 12, left: 0, bottom: 0 }} barCategoryGap="26%" stackOffset="expand">
+        <XAxis type="number" hide domain={[0, 1]} />
+        <YAxis type="category" dataKey="label" tick={{ ...TICK, fill: '#374151' }} axisLine={false} tickLine={false} width={120} />
+        <Tooltip
+          cursor={{ fill: '#f0fdf4' }}
+          content={({ active, payload, label }) => {
+            if (!active || !payload?.length) return null
+            const row = payload[0].payload as Record<string, number | string>
+            return (
+              <div className="min-w-[180px] rounded-xl border border-secondary-200 bg-white px-3 py-2 shadow-lg">
+                <p className="mb-1 text-xs font-medium text-secondary-500">{String(label)}</p>
+                {names.map((nm, i) => (
+                  <div key={nm} className="flex items-center gap-2 text-xs">
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ background: LIKERT_COLORS[i] }} />
+                    <span className="font-bold text-secondary-900">{Number(row[`c${i + 1}`])}</span>
+                    <span className="text-secondary-500">
+                      {nm} ({Math.round((Number(row[`c${i + 1}`]) / Number(row.n)) * 100)}%)
+                    </span>
+                  </div>
+                ))}
+                {onSelect && <p className="mt-1 text-[11px] text-primary-700">Click to see the low-scoring trips</p>}
+              </div>
+            )
+          }}
+        />
+        {names.map((nm, i) => (
+          <Bar
+            key={nm}
+            dataKey={`p${i + 1}`}
+            name={nm}
+            stackId="likert"
+            fill={LIKERT_COLORS[i]}
+            cursor={onSelect ? 'pointer' : undefined}
+            onClick={onSelect ? (d: { payload?: { key: string } }) => d.payload && onSelect(d.payload.key) : undefined}
+            maxBarSize={24}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+export function LikertLegend({ names }: { names: readonly string[] }) {
+  return (
+    <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-secondary-600">
+      {names.map((nm, i) => (
+        <span key={nm} className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: LIKERT_COLORS[i] }} />
+          {nm}
+        </span>
+      ))}
+    </div>
   )
 }
