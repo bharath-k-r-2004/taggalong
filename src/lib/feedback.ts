@@ -103,16 +103,6 @@ export interface FeedbackRow {
 export const MESSAGE_MIN = 10
 export const MESSAGE_MAX = 600
 
-export async function fetchFeedback(): Promise<FeedbackRow[]> {
-  const { data, error } = await supabase
-    .from('feedback')
-    .select('id, category, mood, message, created_at')
-    .order('created_at', { ascending: false })
-    .limit(200)
-  if (error) throw error
-  return (data ?? []) as FeedbackRow[]
-}
-
 // The database function stores no user id with the message, so feedback stays anonymous
 export async function submitFeedback(category: CategoryKey, mood: number, message: string) {
   const { error } = await supabase.rpc('submit_feedback', { p_category: category, p_mood: mood, p_message: message })

@@ -142,7 +142,7 @@ export function HomePage() {
           </span>
           <span className="flex-1">
             <span className="block font-semibold text-secondary-900">Share anonymous feedback</span>
-            <span className="block text-sm text-secondary-600">Tell us what to fix or keep. See what other students are saying.</span>
+            <span className="block text-sm text-secondary-600">Tell us what to fix or keep. Only the TagAlong team sees it.</span>
           </span>
           <ArrowRight size={18} className="text-primary-600" />
         </button>
