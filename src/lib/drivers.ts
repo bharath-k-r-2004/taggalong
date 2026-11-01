@@ -332,3 +332,20 @@ export function driverAvailability(
     detail: `Next TagAlong ride: ${when}, ${formatTime(next.departure_time)}, ${route(next)}${more}.`
   }
 }
+
+// ---------- duplicate check: one entry per phone number ----------
+
+export interface ExistingDriver {
+  id: string
+  name: string
+  vehicle_type: string | null
+  vehicle_number: string | null
+  seats: number | null
+}
+
+export async function findDriverByPhone(input: string): Promise<ExistingDriver | null> {
+  const phone = cleanPhone(input)
+  if (!isValidPhone(phone)) return null
+  const { data } = await supabase.from('drivers').select('id, name, vehicle_type, vehicle_number, seats').eq('phone', phone).maybeSingle()
+  return (data as ExistingDriver | null) || null
+}

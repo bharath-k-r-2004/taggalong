@@ -7,6 +7,8 @@ import { PhoneInput } from '../components/PhoneInput'
 import { Place } from '../lib/places'
 import { DEFAULT_SEATS, DRIVER_VEHICLE_TYPES, RELATIONSHIPS, addDriver, isValidPhone, recordQuote } from '../lib/drivers'
 import { friendlyError } from '../lib/errors'
+import { useExistingDriver } from '../hooks/useExistingDriver'
+import { ExistingDriverNotice } from '../components/ExistingDriverNotice'
 
 export function AddDriverPage() {
   const { user } = useAuth()
@@ -26,12 +28,14 @@ export function AddDriverPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const existing = useExistingDriver(phone)
+
   const fieldClass =
     'w-full rounded-xl border border-secondary-300 px-3 py-2.5 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary-500'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (name.trim().length < 2) return setError("Please enter the driver's name.")
+    if (!existing && name.trim().length < 2) return setError("Please enter the driver's name.")
     if (!isValidPhone(phone)) return setError("Please enter the driver's 10-digit mobile number.")
     const price = Number(qPrice)
     const addingQuote = Boolean(qFrom?.name || qTo?.name || qPrice)
@@ -39,6 +43,22 @@ export function AddDriverPage() {
       return setError('To record a price, add the route (from and to) and the amount — or leave all three empty.')
     }
     if (!user) return
+
+    // Same number already listed: don't create a second entry, add the fare to the existing driver
+    if (existing) {
+      try {
+        setSaving(true)
+        setError(null)
+        if (addingQuote && qFrom && qTo) {
+          await recordQuote({ driverId: existing.id, userId: user.id, from: qFrom, to: qTo, price, tollIncluded: qToll })
+        }
+        navigate(`/drivers/${existing.id}`, { replace: true })
+      } catch (err) {
+        setError(friendlyError(err))
+        setSaving(false)
+      }
+      return
+    }
 
     try {
       setSaving(true)
@@ -85,7 +105,7 @@ export function AddDriverPage() {
             <label className="mb-1 flex items-center gap-2 text-sm font-medium text-secondary-700">
               <UserCircle size={16} /> Driver name
             </label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Enter driver's name" className="!rounded-xl" required />
+            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Enter driver's name" className="!rounded-xl" required={!existing} />
           </div>
           <div>
             <label className="mb-1 flex items-center gap-2 text-sm font-medium text-secondary-700">
@@ -93,6 +113,14 @@ export function AddDriverPage() {
             </label>
             <PhoneInput value={phone} onChange={setPhone} required ariaLabel="Driver's phone number" />
           </div>
+          {existing && (
+            <ExistingDriverNotice driver={existing}>
+              <button type="button" onClick={() => navigate(`/drivers/${existing.id}`)} className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700">
+                View {existing.name.split(' ')[0]}'s profile
+              </button>
+              <span className="self-center text-xs text-primary-800">No need to add them again. Add the fare you paid below and it goes on their profile.</span>
+            </ExistingDriverNotice>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 flex items-center gap-2 text-sm font-medium text-secondary-700">
@@ -170,9 +198,9 @@ export function AddDriverPage() {
         <section className="space-y-3 rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
           <div>
             <p className="flex items-center gap-2 font-semibold text-secondary-900">
-              <IndianRupee size={16} /> Quoted price <span className="text-sm font-normal text-secondary-400">(optional)</span>
+              <IndianRupee size={16} /> What did they charge? <span className="text-sm font-normal text-secondary-400">(optional, but very helpful)</span>
             </p>
-            <p className="text-xs text-secondary-500">The same driver may charge differently per route, so a price is saved with its route.</p>
+            <p className="text-xs text-secondary-500">Students see this fare on the driver's card. Add the route and the total amount; the same driver may charge differently per route.</p>
           </div>
           <LocationInput label="From" placeholder="e.g. IIM Rohtak" value={qFrom} onChange={setQFrom} kind="from" />
           <LocationInput label="To" placeholder="e.g. Delhi Airport" value={qTo} onChange={setQTo} kind="to" near={qFrom} />
@@ -211,7 +239,7 @@ export function AddDriverPage() {
           disabled={saving}
           className="w-full rounded-xl bg-primary-600 py-3.5 text-lg font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save driver'}
+          {saving ? 'Saving...' : existing ? (qPrice ? `Add this fare to ${existing.name.split(' ')[0]}` : `Open ${existing.name.split(' ')[0]}'s profile`) : 'Save driver'}
         </button>
       </form>
     </div>

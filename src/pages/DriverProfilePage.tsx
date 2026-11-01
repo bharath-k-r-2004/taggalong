@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   CalendarClock,
   Car,
@@ -52,7 +52,8 @@ export function DriverProfilePage() {
   const [busy, setBusy] = useState(false)
 
   // add-a-quote form
-  const [quoteOpen, setQuoteOpen] = useState(false)
+  const navState = useLocation().state as { addQuote?: boolean } | null
+  const [quoteOpen, setQuoteOpen] = useState(Boolean(navState?.addQuote))
   const [qFrom, setQFrom] = useState<Place | null>(null)
   const [qTo, setQTo] = useState<Place | null>(null)
   const [qPrice, setQPrice] = useState('')

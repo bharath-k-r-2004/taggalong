@@ -4,6 +4,8 @@ import { ArrowUpDown, Car, IndianRupee, Info, Sparkles, Users } from 'lucide-rea
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { LocationInput } from '../components/LocationInput'
+import { useExistingDriver } from '../hooks/useExistingDriver'
+import { ExistingDriverNotice } from '../components/ExistingDriverNotice'
 import { DriverPicker } from '../components/DriverPicker'
 import { PhoneInput, isTenDigitMobile } from '../components/PhoneInput'
 import { Place } from '../lib/places'
@@ -92,9 +94,11 @@ export function CreateRidePage() {
   // (never "Own car": the student is the driver)
   const ownCar = vehicleType === 'Own car'
   const canSaveToDirectory = phoneValid && !ownCar
-  // A new driver saved to the directory needs a name; otherwise the name is optional
-  const nameNeeded = !picked && saveToDirectory && canSaveToDirectory
   const keptDriverId = editing && prefill.driverId && phoneDigits === (prefill.phone || '') ? prefill.driverId : null
+  // Number already in the directory: link the ride to that driver instead of adding a duplicate
+  const existing = useExistingDriver(phone, Boolean(picked || keptDriverId || ownCar))
+  // A new driver saved to the directory needs a name; otherwise the name is optional
+  const nameNeeded = !picked && !existing && saveToDirectory && canSaveToDirectory
   const cost = Number(totalCost)
   const seatCount = Number(seats)
   const perPerson = cost > 0 && seatCount > 0 ? cost / seatCount : null
@@ -271,7 +275,7 @@ export function CreateRidePage() {
       }
 
       // Save a new driver to the community directory (or reuse the listed one)
-      let driverId = picked?.driver.id || keptDriverId || null
+      let driverId = picked?.driver.id || keptDriverId || existing?.id || null
       if (!driverId && saveToDirectory && canSaveToDirectory) {
         const result = await addDriver({
           userId: user.id,
@@ -684,6 +688,22 @@ export function CreateRidePage() {
                       <PhoneInput value={phone} onChange={setPhone} required={numberRequired} ariaLabel="Driver's number" />
                     </div>
                   </div>
+                  {existing && !picked && (
+                    <ExistingDriverNotice driver={existing}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDriverName(existing.name)
+                          if (existing.vehicle_type && VEHICLES.includes(existing.vehicle_type)) setVehicleType(existing.vehicle_type)
+                          if (existing.vehicle_number) setVehicleNumber(existing.vehicle_number)
+                        }}
+                        className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700"
+                      >
+                        Use {existing.name.split(' ')[0]}'s details
+                      </button>
+                      <span className="self-center text-xs text-primary-800">Your ride will be linked to this driver, not added again.</span>
+                    </ExistingDriverNotice>
+                  )}
                   <p className="text-xs text-secondary-500">
                     {numberRequired
                       ? "The driver's number is shown only to you and the students whose request you accept."
@@ -696,7 +716,7 @@ export function CreateRidePage() {
                       Add the driver's 10-digit number to save them to the TagAlong driver directory.
                     </p>
                   )}
-                  {!picked && !keptDriverId && canSaveToDirectory && (
+                  {!picked && !keptDriverId && !existing && canSaveToDirectory && (
                     <div className="space-y-2 rounded-xl bg-secondary-50 p-3">
                       <label className="flex items-start gap-2 text-sm text-secondary-800">
                         <input

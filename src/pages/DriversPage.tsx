@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, Clock, Plus, Search } from 'lucide-react'
+import { CalendarDays, Clock, Plus, Search, UserPlus } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { friendlyError } from '../lib/errors'
 import { LocationInput } from '../components/LocationInput'
-import { DriverCard } from '../components/DriverCard'
+import { DirectoryDriverCard } from '../components/DirectoryDriverCard'
 import { Place } from '../lib/places'
 import { todayString } from '../lib/rides'
 import {
@@ -61,21 +61,56 @@ export function DriversPage() {
   const onRoute = routeGiven ? list.filter(r => r.routeQuote) : list
   const others = routeGiven ? list.filter(r => !r.routeQuote) : []
   const mineCount = drivers.filter(d => d.added_by_user_id === user?.id).length
+  const noDrivers = !loading && !error && drivers.length === 0
+  const addDriver = () => navigate('/drivers/new')
+  const card = (item: (typeof list)[number]) => (
+    <DirectoryDriverCard
+      key={item.driver.id}
+      item={item}
+      quotes={quotes.filter(x => x.driver_id === item.driver.id)}
+      mine={item.driver.added_by_user_id === user?.id}
+      availability={driverAvailability(bookings, item.driver.id, date || undefined, time || undefined)}
+      onOpen={() => navigate(`/drivers/${item.driver.id}`)}
+      onAddFare={() => navigate(`/drivers/${item.driver.id}`, { state: { addQuote: true } })}
+    />
+  )
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6">
+    <div className="mx-auto max-w-3xl px-4 py-6 pb-28">
       <div className="mb-1 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-secondary-900">Community drivers</h1>
-        <button
-          type="button"
-          onClick={() => navigate('/drivers/new')}
-          className="flex items-center gap-1.5 rounded-xl bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700"
-        >
-          <Plus size={16} /> Add a driver
-        </button>
+        {!noDrivers && (
+          <button
+            type="button"
+            onClick={addDriver}
+            className="hidden items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-600/30 ring-4 ring-primary-100 hover:bg-primary-700 md:flex"
+          >
+            <Plus size={16} /> Add a driver
+          </button>
+        )}
       </div>
       <p className="mb-4 text-secondary-600">Drivers IIM Rohtak students have travelled with and recommend.</p>
 
+      {noDrivers ? (
+        <section className="flex min-h-[calc(100vh-11rem)] flex-col items-center justify-center md:min-h-[calc(100vh-10rem)] rounded-3xl border-2 border-dashed border-primary-300 bg-gradient-to-b from-primary-50 to-white px-6 py-12 text-center">
+          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-primary-100 text-primary-700 ring-8 ring-primary-50">
+            <UserPlus size={38} />
+          </span>
+          <h2 className="mt-5 text-2xl font-bold text-secondary-900">No drivers yet</h2>
+          <p className="mt-2 max-w-md text-secondary-600">
+            Know a cab or auto driver you trust? Add them with their number and what they charged, so other students can book them too.
+          </p>
+          <button
+            type="button"
+            onClick={addDriver}
+            className="mt-6 flex items-center gap-2 rounded-2xl bg-primary-600 px-8 py-4 text-lg font-bold text-white shadow-lg shadow-primary-600/30 ring-4 ring-primary-100 transition hover:scale-[1.02] hover:bg-primary-700"
+          >
+            <Plus size={22} /> Add a driver
+          </button>
+          <p className="mt-3 text-xs text-secondary-500">Takes a minute. Only IIM Rohtak students can see the directory.</p>
+        </section>
+      ) : (
+      <>
       <div className="space-y-3 rounded-2xl border border-secondary-200 bg-white p-4 shadow-sm">
         <LocationInput label="From" placeholder="Pickup (optional)" value={from} onChange={setFrom} kind="from" allowCurrentLocation />
         <LocationInput label="To" placeholder="Destination (optional)" value={to} onChange={setTo} kind="to" near={from} />
@@ -131,16 +166,16 @@ export function DriversPage() {
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
           </div>
         ) : list.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-secondary-300 bg-white px-4 py-10 text-center">
+          <div className="rounded-2xl border border-dashed border-primary-300 bg-primary-50/40 px-4 py-10 text-center">
             <p className="text-secondary-700">
-              {filter === 'mine' ? "You haven't added any drivers yet." : 'No drivers found.'}
+              {filter === 'mine' ? "You haven't added any drivers yet." : 'No drivers match your search.'}
             </p>
             <button
               type="button"
-              onClick={() => navigate('/drivers/new')}
-              className="mt-3 text-sm font-semibold text-primary-600 hover:underline"
+              onClick={addDriver}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-5 py-2.5 font-semibold text-white shadow-md hover:bg-primary-700"
             >
-              Add a driver you trust
+              <Plus size={16} /> Add a driver
             </button>
           </div>
         ) : (
@@ -151,29 +186,13 @@ export function DriversPage() {
               </h2>
             )}
             <div className="space-y-3">
-              {onRoute.map(item => (
-                <DriverCard
-                  key={item.driver.id}
-                  item={item}
-                  mine={item.driver.added_by_user_id === user?.id}
-                  availability={driverAvailability(bookings, item.driver.id, date || undefined, time || undefined)}
-                  onClick={() => navigate(`/drivers/${item.driver.id}`)}
-                />
-              ))}
+              {onRoute.map(card)}
             </div>
             {others.length > 0 && (
               <>
                 <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-secondary-500">Other drivers</h2>
                 <div className="space-y-3">
-                  {others.map(item => (
-                    <DriverCard
-                      key={item.driver.id}
-                      item={item}
-                      mine={item.driver.added_by_user_id === user?.id}
-                      availability={driverAvailability(bookings, item.driver.id, date || undefined, time || undefined)}
-                      onClick={() => navigate(`/drivers/${item.driver.id}`)}
-                    />
-                  ))}
+                  {others.map(card)}
                 </div>
               </>
             )}
@@ -181,6 +200,20 @@ export function DriversPage() {
           </>
         )}
       </div>
+      </>
+      )}
+
+      {/* Always-visible shortcut to add a driver */}
+      {!noDrivers && (
+        <button
+          type="button"
+          onClick={addDriver}
+          aria-label="Add a driver"
+          className="fixed bottom-24 right-4 z-30 flex items-center gap-2 rounded-full bg-primary-600 px-5 py-3.5 font-semibold text-white shadow-xl shadow-primary-600/40 ring-4 ring-white transition hover:scale-105 hover:bg-primary-700 md:bottom-8 md:right-8"
+        >
+          <Plus size={20} /> Add a driver
+        </button>
+      )}
     </div>
   )
 }
