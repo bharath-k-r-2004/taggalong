@@ -7,6 +7,7 @@ import { NamePage } from './pages/NamePage'
 import { HomePage } from './pages/HomePage'
 import { SearchPage } from './pages/SearchPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { CampusCabsPage } from './pages/CampusCabsPage'
 import { MyTripsPage } from './pages/MyTripsPage'
 import { CreateRidePage } from './pages/CreateRidePage'
 import { RideDetailsPage } from './pages/RideDetailsPage'
@@ -50,6 +51,7 @@ function AppContent() {
           <Route path="/drivers/new" element={<AddDriverPage />} />
           <Route path="/drivers/:id" element={<DriverProfilePage />} />
           <Route path="/trips" element={<MyTripsPage />} />
+          <Route path="/campus-cabs" element={<CampusCabsPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

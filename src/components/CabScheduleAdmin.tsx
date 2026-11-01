@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Bus, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
+import { CabDriversPanel, BookedDeparturesPanel } from './CabDriversAdmin'
 import { LocationInput } from './LocationInput'
 import { IIM_ROHTAK, Place } from '../lib/places'
-import { DEFAULT_SEATS, Driver, fetchDrivers } from '../lib/drivers'
+import { DEFAULT_SEATS } from '../lib/drivers'
 import {
+  BookedDeparture,
+  CabDriver,
   CabSchedule,
+  fetchCabOverview,
   DAY_LABELS,
   INTERVAL_OPTIONS,
   ScheduleInput,
@@ -54,20 +59,26 @@ const placeOf = (name: string, lat: number | null, lng: number | null): Place =>
 // Admin: set the times TagAlong cabs leave campus
 export function CabScheduleAdmin() {
   const [schedules, setSchedules] = useState<CabSchedule[]>([])
-  const [drivers, setDrivers] = useState<Driver[]>([])
+  const { user } = useAuth()
+  const [drivers, setDrivers] = useState<CabDriver[]>([])
+  const [departures, setDepartures] = useState<BookedDeparture[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
+  // schedules, every cab driver (sample ones included) and the departures students have booked
   const load = () =>
-    fetchSchedules(true)
-      .then(setSchedules)
+    Promise.all([fetchSchedules(true), fetchCabOverview()])
+      .then(([s, o]) => {
+        setSchedules(s)
+        setDrivers(o.drivers)
+        setDepartures(o.departures)
+      })
       .catch(err => setError(friendlyError(err)))
 
   useEffect(() => {
     void load()
-    fetchDrivers().then(setDrivers).catch(() => setDrivers([]))
   }, [])
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm(f => (f ? { ...f, [key]: value } : f))
@@ -165,7 +176,10 @@ export function CabScheduleAdmin() {
     }
   }
 
-  const driverName = (id: string | null) => drivers.find(d => d.id === id)?.name
+  const driverName = (id: string | null) => {
+    const d = drivers.find(x => x.id === id)
+    return d ? `${d.name}${d.placeholder && !/sample/i.test(d.name) ? ' (sample)' : ''}` : null
+  }
 
   return (
     <section className="mt-6 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">
@@ -305,6 +319,7 @@ export function CabScheduleAdmin() {
               {driverChoices.map(d => (
                 <option key={d.id} value={d.id}>
                   {d.name}
+                  {d.placeholder && !/sample/i.test(d.name) ? ' (sample)' : ''}
                   {d.vehicle_type ? ` · ${d.vehicle_type}` : ''}
                 </option>
               ))}
@@ -371,6 +386,9 @@ export function CabScheduleAdmin() {
           ))}
         </div>
       )}
+
+      <BookedDeparturesPanel departures={departures} drivers={drivers} onChanged={load} />
+      <CabDriversPanel drivers={drivers} userId={user?.id} onChanged={load} />
     </section>
   )
 }

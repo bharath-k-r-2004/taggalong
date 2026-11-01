@@ -1,7 +1,7 @@
 // Campus cabs: TagAlong cabs that leave campus at fixed times. The team sets the
 // schedule (Admin page); students book a seat on a departure without needing approval.
 import { supabase } from './supabase'
-import { RIDE_SELECT, Ride, rideDateTime, todayString } from './rides'
+import { RIDE_SELECT, Ride, formatTime, rideDateTime, todayString } from './rides'
 
 export interface CabSchedule {
   id: string
@@ -68,7 +68,8 @@ export function scheduleSummary(s: CabSchedule): string {
           .join(', ')
   const every = INTERVAL_OPTIONS.find(o => o.minutes === s.interval_minutes)?.label.toLowerCase() || `every ${s.interval_minutes} min`
   const times = departureTimes(s)
-  return times.length === 1 ? `${days} at ${times[0]}` : `${days}, ${every} from ${times[0]} to ${times[times.length - 1]}`
+  const t = (hhmm: string) => formatTime(hhmm)
+  return times.length === 1 ? `${days} at ${t(times[0])}` : `${days}, ${every} from ${t(times[0])} to ${t(times[times.length - 1])}`
 }
 
 export async function fetchSchedules(includeInactive = false): Promise<CabSchedule[]> {
@@ -142,5 +143,66 @@ export async function setScheduleActive(id: string, active: boolean): Promise<vo
 
 export async function deleteSchedule(id: string): Promise<void> {
   const { error } = await supabase.from('cab_schedules').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ---------- admin: cab drivers and booked departures ----------
+
+export interface CabDriver {
+  id: string
+  name: string
+  phone: string | null
+  vehicle_type: string | null
+  vehicle_number: string | null
+  seats: number | null
+  placeholder: boolean // sample driver: no number, hidden from students until replaced
+}
+
+export interface BookedDeparture {
+  id: string
+  schedule_id: string
+  date: string
+  departure_time: string
+  origin: string
+  destination: string
+  max_seats: number
+  current_participants: number
+  status: string
+  driver_id: string | null
+}
+
+export async function fetchCabOverview(): Promise<{ drivers: CabDriver[]; departures: BookedDeparture[] }> {
+  const { data, error } = await supabase.rpc('admin_cab_overview')
+  if (error) throw error
+  return data as { drivers: CabDriver[]; departures: BookedDeparture[] }
+}
+
+export async function assignCabDriver(rideId: string, driverId: string | null): Promise<void> {
+  const { error } = await supabase.rpc('admin_assign_cab_driver', { p_ride: rideId, p_driver: driverId })
+  if (error) throw error
+}
+
+export interface CabDriverInput {
+  name: string
+  phone: string // empty keeps (or makes) it a sample driver
+  vehicle_type: string
+  vehicle_number: string
+  seats: number
+}
+
+// Adding a number turns a sample driver into a real one; their upcoming cabs update automatically
+export async function saveCabDriver(input: CabDriverInput, userId: string, id?: string): Promise<void> {
+  const phone = input.phone.replace(/\D/g, '').slice(-10)
+  const row = {
+    name: input.name.trim(),
+    phone: phone || null,
+    placeholder: !phone,
+    vehicle_type: input.vehicle_type,
+    vehicle_number: input.vehicle_number.trim().toUpperCase() || null,
+    seats: input.seats
+  }
+  const { error } = id
+    ? await supabase.from('drivers').update(row).eq('id', id)
+    : await supabase.from('drivers').insert({ ...row, added_by_user_id: userId, relationship: 'know' })
   if (error) throw error
 }

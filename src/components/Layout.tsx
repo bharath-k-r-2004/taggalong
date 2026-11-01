@@ -1,11 +1,13 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
-import { Home, MapPin, PlusCircle, Search, User, UserCheck } from 'lucide-react'
+import { Bus, Home, MapPin, PlusCircle, Search, User, UserCheck } from 'lucide-react'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Home', icon: Home },
   { path: '/search', label: 'Find', icon: Search },
+  { path: '/campus-cabs', label: 'Cabs', icon: Bus },
   { path: '/create-ride', label: 'Offer', icon: PlusCircle },
-  { path: '/drivers', label: 'Drivers', icon: UserCheck },
+  // phones have room for six tabs: Drivers stays in the sidebar and on Home
+  { path: '/drivers', label: 'Drivers', icon: UserCheck, desktopOnly: true },
   { path: '/trips', label: 'My Trips', icon: MapPin },
   { path: '/profile', label: 'Profile', icon: User }
 ]
@@ -24,7 +26,7 @@ export function Layout() {
 
       {/* Bottom navigation (phones) */}
       <nav className="fixed bottom-0 left-0 right-0 z-20 flex justify-around border-t border-secondary-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-        {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
+        {NAV_ITEMS.filter(item => !('desktopOnly' in item)).map(({ path, label, icon: Icon }) => (
           <Link
             key={path}
             to={path}
@@ -55,7 +57,7 @@ export function Layout() {
               }`}
             >
               <Icon size={20} className="mr-3" />
-              {label === 'Find' ? 'Find a ride' : label === 'Offer' ? 'Post a ride' : label}
+              {label === 'Find' ? 'Find a ride' : label === 'Offer' ? 'Post a ride' : label === 'Cabs' ? 'Campus cabs' : label}
             </Link>
           ))}
         </nav>

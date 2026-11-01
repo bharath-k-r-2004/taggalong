@@ -489,6 +489,9 @@ export function RideDetailsPage() {
             Leaves campus at a set time. Seats are booked directly, and if the student who opened this departure leaves, the next
             rider takes it over.
           </p>
+          {!ride.driver_name && (
+            <p className="mt-1 font-medium text-primary-900">Driver to be confirmed by TagAlong before departure.</p>
+          )}
         </div>
       )}
 
