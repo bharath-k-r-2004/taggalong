@@ -7,6 +7,17 @@
     <meta name="theme-color" content="#16a34a" />
     <meta name="description" content="TagAlong - Find Your Ride. Trust Your Community." />
     <title>TagAlong | IIM Rohtak Ride Sharing</title>
+    <script>
+      // One-off Vercel deployment links (taggalong-xxxx-tag-along2.vercel.app) go to the main address,
+      // keeping the page the student asked for, so everyone uses (and signs in on) one site
+      ;(function () {
+        var main = 'taggalong.vercel.app'
+        var host = location.hostname
+        if (host !== main && /^taggalong-[a-z0-9-]+\.vercel\.app$/.test(host)) {
+          location.replace('https://' + main + location.pathname + location.search + location.hash)
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -4,6 +4,9 @@ import { Leaf, ShieldCheck, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 
+// Signing in always comes back to the main address (never a one-off deployment link); local development keeps its own
+const SITE_ORIGIN = /\.vercel\.app$/.test(window.location.hostname) ? 'https://taggalong.vercel.app' : window.location.origin
+
 // Sign-in is Google-only with an @iimrohtak.ac.in account. First-time students are
 // then asked for their name; programme and batch come from the email automatically.
 export function AuthPage() {
@@ -31,7 +34,7 @@ export function AuthPage() {
         provider: 'google',
         options: {
           // Come back to the same site you started on
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${SITE_ORIGIN}/auth/callback`,
           queryParams: {
             hd: 'iimrohtak.ac.in', // Google shows IIM Rohtak accounts first
             prompt: 'select_account'
