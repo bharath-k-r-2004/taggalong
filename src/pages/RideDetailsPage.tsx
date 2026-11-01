@@ -18,6 +18,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { RideChat } from '../components/RideChat'
 import { RideWhen } from '../components/RideWhen'
+import { bookCampusCab, leaveCampusCab } from '../lib/campusCabs'
 import { LiveTripPanel } from '../components/LiveTripPanel'
 import { Driver, fetchDrivers } from '../lib/drivers'
 import { friendlyError } from '../lib/errors'
@@ -68,6 +69,7 @@ const POSTED_MESSAGES: Record<string, string> = {
   assigned:
     "Ride posted with a community driver assigned automatically. Call him from the driver box below to confirm he's free before students join.",
   picked: "Ride posted with the driver you chose. Call him from the driver box below to confirm he's free.",
+  cab: "Seat booked on the campus cab! Everyone on this departure shares the fare, and you'll see the driver's details below.",
   edited: 'Changes saved. Everyone on the ride can see the new details.'
 }
 
@@ -186,6 +188,26 @@ export function RideDetailsPage() {
   const isMember = isCreator || mine?.status === 'accepted'
   const clash = isCreator ? undefined : myConfirmed.find(c => c.id !== ride.id && ridesClash(c, ride))
   const canSeeContact = Boolean(contact) && isMember
+  const cab = Boolean(ride.schedule_id) // TagAlong campus cab: seats are booked directly
+
+  // Turns a call that throws into the { error } shape run() expects
+  const attempt = (fn: () => Promise<unknown>) => async () => {
+    try {
+      await fn()
+      return { error: null }
+    } catch (err) {
+      return { error: { message: err instanceof Error ? err.message : String((err as { message?: string })?.message || err) } }
+    }
+  }
+  const bookCabSeat = () =>
+    void run(
+      attempt(() => bookCampusCab(ride.schedule_id!, ride.date, ride.departure_time.slice(0, 5))),
+      POSTED_MESSAGES.cab
+    )
+  const leaveCab = () => {
+    if (!window.confirm('Leave this campus cab? Your seat goes back to other students.')) return
+    void run(attempt(() => leaveCampusCab(ride.id)), 'You left the campus cab.')
+  }
 
   const requestToJoin = () =>
     run(
@@ -457,6 +479,16 @@ export function RideDetailsPage() {
               No, I didn't
             </button>
           </div>
+        </div>
+      )}
+
+      {cab && !isClosed(ride) && (
+        <div className="mb-3 rounded-2xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-900">
+          <p className="font-semibold">TagAlong campus cab</p>
+          <p className="text-primary-800">
+            Leaves campus at a set time. Seats are booked directly, and if the student who opened this departure leaves, the next
+            rider takes it over.
+          </p>
         </div>
       )}
 
@@ -741,6 +773,17 @@ export function RideDetailsPage() {
       <div className="sticky bottom-20 mt-4 md:bottom-4">
         {cancelOpen ? (
           cancelPanel
+        ) : isCreator && cab ? (
+          active && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={leaveCab}
+              className="w-full rounded-xl border border-red-200 bg-white py-3 font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-50"
+            >
+              Leave this cab
+            </button>
+          )
         ) : isCreator ? (
           active && (
             <div className="flex gap-2">
@@ -846,6 +889,24 @@ export function RideDetailsPage() {
               View your ride →
             </Link>
           </div>
+        ) : cab ? (
+          active && (
+            <div>
+              <button
+                type="button"
+                disabled={busy || left === 0}
+                onClick={bookCabSeat}
+                className="w-full rounded-xl bg-primary-600 py-3.5 text-lg font-semibold text-white shadow-md hover:bg-primary-700 disabled:opacity-50"
+              >
+                {left === 0 ? 'Cab is full' : busy ? 'Booking...' : `Book seat · ${formatRupees(shareIfYouJoin(ride))}`}
+              </button>
+              {left > 0 && (
+                <p className="mt-1.5 text-center text-xs text-secondary-500">
+                  No approval needed. The fare is split among everyone on this departure.
+                </p>
+              )}
+            </div>
+          )
         ) : (
           active &&
           (joinOpen ? (

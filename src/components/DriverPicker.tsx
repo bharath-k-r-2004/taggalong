@@ -15,6 +15,7 @@ import {
   rankDrivers
 } from '../lib/drivers'
 import { Place, distanceKm } from '../lib/places'
+import { AUTO_MAX_MINUTES, autoAllowed, drivingMinutes, formatDuration, isAuto } from '../lib/rides'
 
 interface DriverPickerProps {
   from?: Place | null
@@ -91,7 +92,14 @@ export function DriverPicker({
       .finally(() => setLoading(false))
   }, [])
 
-  const ranked = useMemo(() => rankDrivers(drivers, quotes, from, to), [drivers, quotes, from, to])
+  // Long trips (over an hour) only offer cabs: autos are left out of the list and auto-assign
+  const minutes = drivingMinutes(from, to)
+  const allRanked = useMemo(() => rankDrivers(drivers, quotes, from, to), [drivers, quotes, from, to])
+  const ranked = useMemo(
+    () => (autoAllowed(minutes) ? allRanked : allRanked.filter(r => !isAuto(r.driver.vehicle_type))),
+    [allRanked, minutes]
+  )
+  const autosHidden = allRanked.length - ranked.length
 
   const best = useMemo(() => bestAvailableDriver(ranked, bookings, from, to, date, time), [ranked, bookings, from, to, date, time])
   useEffect(() => {
@@ -132,6 +140,12 @@ export function DriverPicker({
 
   return (
     <div className="space-y-3">
+      {autosHidden > 0 && minutes !== null && (
+        <p className="rounded-xl bg-secondary-50 px-3 py-2 text-xs text-secondary-600">
+          This trip takes about {formatDuration(minutes)} by road, so only cabs are shown. Autos are offered for trips up to{' '}
+          {AUTO_MAX_MINUTES} minutes ({autosHidden} hidden).
+        </p>
+      )}
       {drivers.length > 4 && (
         <div className="flex items-center gap-2 rounded-xl border border-secondary-200 bg-secondary-50 px-3 py-2">
           <Search size={16} className="text-secondary-400" />

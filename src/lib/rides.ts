@@ -46,6 +46,7 @@ export interface Ride {
   toll_included: boolean | null
   cancel_reason: string | null
   ended_at?: string | null // when the poster ended the ride
+  schedule_id?: string | null // set for TagAlong campus cabs (booked directly, no approval)
   // open / full / looking (travel group, no driver yet) / cancelled / completed /
   // expired (left with nobody else on board; closed automatically by the database)
   status: 'open' | 'full' | 'looking' | 'cancelled' | 'completed' | 'expired' | string
@@ -59,7 +60,7 @@ export interface Ride {
 export const RIDE_SELECT =
   'id, creator_id, origin, destination, origin_lat, origin_lng, destination_lat, destination_lng, ' +
   'date, departure_time, total_cost, max_seats, current_participants, driver_name, vehicle_type, ' +
-  'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ended_at, ' +
+  'vehicle_number, notes, status, created_at, driver_id, time_flexibility, toll_included, cancel_reason, ended_at, schedule_id, ' +
   'creator:users(name, course, batch), ' +
   // "!ride_id" names the exact link to follow, so extra links can never confuse the API
   'ride_participants!ride_id(id, user_id, status, message, joined_at, withdrawn_for, trip_confirmed, arrived_at, ' +
@@ -260,6 +261,35 @@ export function needsPosterConfirmation(ride: Ride, userId?: string): boolean {
 }
 
 // Rough arrival estimate from straight-line distance (road ≈ 1.35×, ~45 km/h average, +10 min)
+// ---------- vehicle rules ----------
+
+// Roads are about 1.35x the straight-line distance; 45 km/h average including town traffic.
+// The same estimate the live trip uses for "expected around".
+export function drivingMinutes(from?: Partial<Place> | null, to?: Partial<Place> | null): number | null {
+  if (!from || !to) return null
+  const km = distanceKm({ lat: from.lat ?? null, lng: from.lng ?? null }, { lat: to.lat ?? null, lng: to.lng ?? null })
+  return km === null ? null : Math.round((km * 1.35 * 60) / 45)
+}
+
+// Autos are for short hops (campus to the station, the city). Anything longer than this
+// (Delhi, the airport, Chandigarh...) only offers cabs: safer, faster, room for luggage.
+export const AUTO_MAX_MINUTES = 60
+
+export function isAuto(vehicleType?: string | null): boolean {
+  return /auto/i.test(vehicleType || '')
+}
+
+export function autoAllowed(minutes: number | null): boolean {
+  return minutes === null || minutes <= AUTO_MAX_MINUTES
+}
+
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  const m = Math.round((minutes % 60) / 5) * 5
+  return m ? `${h} hr ${m} min` : `${h} hr`
+}
+
 export function estimatedArrival(ride: Ride): Date | null {
   const km = distanceKm(
     { lat: ride.origin_lat, lng: ride.origin_lng },

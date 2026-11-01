@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ShieldAlert, Wrench, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { CabScheduleAdmin } from '../components/CabScheduleAdmin'
 import { Ride, formatDateLabel, formatRupees, formatTime, rideDateTime, ridePhase, shortPlace } from '../lib/rides'
 
 type Tab = 'rides' | 'drivers' | 'students' | 'quotes'
@@ -180,6 +181,8 @@ export function AdminPage() {
           ))}
         </div>
       )}
+
+      <CabScheduleAdmin />
 
       {/* Health checks */}
       <section className="mt-6 rounded-2xl border border-secondary-200 bg-white p-5 shadow-sm">

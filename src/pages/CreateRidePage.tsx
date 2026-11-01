@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowUpDown, Car, IndianRupee, Info, Sparkles, Users } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -7,7 +7,18 @@ import { LocationInput } from '../components/LocationInput'
 import { DriverPicker } from '../components/DriverPicker'
 import { PhoneInput, isTenDigitMobile } from '../components/PhoneInput'
 import { Place } from '../lib/places'
-import { FLEXIBILITY_OPTIONS, formatDateLabel, formatRupees, formatTime, todayString } from '../lib/rides'
+import {
+  AUTO_MAX_MINUTES,
+  FLEXIBILITY_OPTIONS,
+  autoAllowed,
+  drivingMinutes,
+  formatDateLabel,
+  formatDuration,
+  formatRupees,
+  formatTime,
+  isAuto,
+  todayString
+} from '../lib/rides'
 import { RELATIONSHIPS, RankedDriver, addDriver, recordQuote } from '../lib/drivers'
 import { friendlyError } from '../lib/errors'
 
@@ -85,7 +96,19 @@ export function CreateRidePage() {
   const cost = Number(totalCost)
   const seatCount = Number(seats)
   const perPerson = cost > 0 && seatCount > 0 ? cost / seatCount : null
-  const vehicleOptions = VEHICLES.includes(vehicleType) ? VEHICLES : [vehicleType, ...VEHICLES]
+  // Trips over an hour by road only offer cabs (and your own car)
+  const tripMinutes = drivingMinutes(from, to)
+  const autoOk = autoAllowed(tripMinutes)
+  const allowedVehicles = autoOk ? VEHICLES : VEHICLES.filter(v => !isAuto(v))
+  const vehicleOptions = allowedVehicles.includes(vehicleType) ? allowedVehicles : [vehicleType, ...allowedVehicles]
+  const [vehicleNote, setVehicleNote] = useState<string | null>(null)
+  useEffect(() => {
+    if (!autoOk && isAuto(vehicleType) && !picked) {
+      setVehicleType(VEHICLES[0])
+      setVehicleNote(`Changed to a cab: this trip takes about ${formatDuration(tripMinutes || 0)}, and autos are for trips up to ${AUTO_MAX_MINUTES} minutes.`)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOk])
   // The community driver list (and auto-assign) is for students without a driver of their own,
   // and for a travel group that's now getting its driver
   const showPicker = converting || (mode === 'group' && !editing)
@@ -171,6 +194,8 @@ export function CreateRidePage() {
     if (new Date(y, m - 1, d, hh, mm).getTime() < Date.now() - 5 * 60 * 1000) return 'The departure time has already passed.'
     if (postsAsGroup) return null
     if (!(cost > 0)) return 'Please enter the total fare for the ride.'
+    if (!autoOk && isAuto(vehicleType))
+      return `This trip takes about ${formatDuration(tripMinutes || 0)} by road. Please choose a cab: autos are for trips up to ${AUTO_MAX_MINUTES} minutes.`
     if (cost > 100000) return 'Please enter a total fare between ₹1 and ₹1,00,000.'
     if (numberRequired && !phoneValid) return "Please enter the driver's 10-digit mobile number."
     if (!numberRequired && phone.trim() && !phoneValid)
@@ -607,7 +632,14 @@ export function CreateRidePage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1 block text-sm font-medium text-secondary-700">Vehicle</label>
-                      <select value={vehicleType} onChange={e => setVehicleType(e.target.value)} className="!rounded-xl !py-2.5">
+                      <select
+                    value={vehicleType}
+                    onChange={e => {
+                      setVehicleType(e.target.value)
+                      setVehicleNote(null)
+                    }}
+                    className="!rounded-xl !py-2.5"
+                  >
                         {vehicleOptions.map(v => (
                           <option key={v}>{v}</option>
                         ))}
@@ -626,6 +658,7 @@ export function CreateRidePage() {
                       />
                     </div>
                   </div>
+                  {vehicleNote && <p className="text-xs text-amber-800">{vehicleNote}</p>}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1 block text-sm font-medium text-secondary-700">

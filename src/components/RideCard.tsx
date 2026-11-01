@@ -109,6 +109,9 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
       {hints.length > 0 && <p className="mt-2 text-xs text-primary-700">{hints.join(' · ')}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        {ride.schedule_id && !isClosed(ride) && (
+          <span className="rounded-full bg-primary-600 px-2.5 py-1 font-semibold text-white">Campus cab</span>
+        )}
         {group && !isClosed(ride) && (
           <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800">Looking for a driver</span>
         )}

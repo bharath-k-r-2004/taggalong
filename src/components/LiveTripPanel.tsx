@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Car, CheckCircle2, MessageCircle, Phone, Share2, Siren, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getCurrentPosition } from '../lib/places'
@@ -14,6 +14,9 @@ interface LiveTripPanelProps {
   onEnd: (happened: boolean) => void
   onConfirm: (travelled: boolean) => void
 }
+
+// The map library is only downloaded when a trip is on
+const LiveMap = lazy(() => import('./LiveMap'))
 
 const firstNameTag = (p?: { name: string | null; course: string | null; batch: string | null } | null) =>
   p ? `${(p.name || 'Student').split(' ')[0]}${p.course ? ` (${p.course}${p.batch ? ` ${p.batch}` : ''})` : ''}` : 'Student'
@@ -45,6 +48,18 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
     ...(ride.ride_participants || []).filter(p => p.status === 'accepted' && p.user_id !== userId).map(p => firstNameTag(p.user))
   ]
   const car = [ride.vehicle_type, ride.vehicle_number].filter(Boolean).join(' ')
+  const names: Record<string, string> = {
+    [ride.creator_id]: (ride.creator?.name || 'Poster').split(' ')[0],
+    ...Object.fromEntries(
+      (ride.ride_participants || []).filter(p => p.status === 'accepted').map(p => [p.user_id, (p.user?.name || 'Rider').split(' ')[0]])
+    )
+  }
+  // Phone reached the drop point: the poster's arrival ends the ride; a rider's marks them as reached
+  const arrivedByGps = () => {
+    if (busy) return
+    if (isCreator) onEnd(true)
+    else if (!mine?.arrived_at && mine?.trip_confirmed !== true) onConfirm(true)
+  }
 
   const tripText = (location: string | null) =>
     [
@@ -147,6 +162,10 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
       </div>
       {shareNote && <p className="mt-2 text-xs text-secondary-500">{shareNote}</p>}
 
+      <Suspense fallback={<p className="mt-4 text-center text-sm text-secondary-500">Loading map...</p>}>
+        <LiveMap ride={ride} userId={userId} names={names} onArrived={arrivedByGps} />
+      </Suspense>
+
       {/* SOS */}
       {sosOpen ? (
         <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-4">
@@ -211,7 +230,7 @@ export function LiveTripPanel({ ride, userId, myName, isCreator, contact, busy, 
                 End ride
               </button>
               <p className="mt-2 text-center text-xs text-secondary-500">
-                The ride also ends by itself once every rider taps “I’ve reached”.
+                The ride also ends by itself once every rider has reached (by tapping, or when their shared location reaches the drop point).
               </p>
             </>
           )

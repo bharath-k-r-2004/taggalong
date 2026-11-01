@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Car, Search, UserCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { RideCard } from '../components/RideCard'
+import { CampusCabs } from '../components/CampusCabs'
 import {
   Ride,
   fetchMyRides,
@@ -55,7 +56,7 @@ export function HomePage() {
 
   // Rides from others that still have seats
   const leavingSoon = rides
-    .filter(r => r.creator_id !== user?.id && seatsLeft(r) > 0 && r.id !== myNext?.id && isJoinable(r))
+    .filter(r => r.creator_id !== user?.id && seatsLeft(r) > 0 && r.id !== myNext?.id && isJoinable(r) && !r.schedule_id)
     .slice(0, 4)
 
   return (
@@ -156,6 +157,8 @@ export function HomePage() {
             <RideCard ride={myNext} userId={user?.id} />
           </section>
         )}
+
+        <CampusCabs userId={user?.id} />
 
         <section>
           <div className="mb-2 flex items-center justify-between">
