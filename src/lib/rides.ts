@@ -9,7 +9,7 @@ export interface Profile {
 }
 
 // withdrawn = closed automatically because the student was accepted on another ride around that time
-export type ParticipantStatus = 'requested' | 'accepted' | 'declined' | 'cancelled' | 'withdrawn'
+export type ParticipantStatus = 'requested' | 'accepted' | 'declined' | 'cancelled' | 'withdrawn' | 'expired'
 
 export interface Participant {
   id: string
@@ -210,8 +210,36 @@ export function myParticipation(ride: Ride, userId?: string): Participant | unde
   return ride.ride_participants?.find(p => p.user_id === userId)
 }
 
+// Requests close 30 minutes before departure, or when the ride fills up
+export const REQUEST_CLOSE_MINUTES = 30
+
+export function requestDeadline(ride: Ride): Date {
+  return new Date(rideDateTime(ride).getTime() - REQUEST_CLOSE_MINUTES * 60000)
+}
+
+export function requestsOpen(ride: Ride): boolean {
+  return !isClosed(ride) && ride.status !== 'full' && ride.status !== 'completed' && Date.now() < requestDeadline(ride).getTime()
+}
+
+// A request nobody accepted in time counts as expired straight away, even before the database job (every 5 min) catches up
+export function effectiveStatus(ride: Ride, p?: Participant): ParticipantStatus | undefined {
+  if (!p) return undefined
+  if (p.status === 'requested' && !requestsOpen(ride)) return 'expired'
+  return p.status
+}
+
 export function pendingRequests(ride: Ride): Participant[] {
-  return (ride.ride_participants || []).filter(p => p.status === 'requested')
+  return (ride.ride_participants || []).filter(p => effectiveStatus(ride, p) === 'requested')
+}
+
+// Rides I posted that have students waiting for my answer, soonest first
+export function waitingForReply(rides: Ride[], userId?: string): { ride: Ride; requests: Participant[]; closesAt: Date }[] {
+  if (!userId) return []
+  return rides
+    .filter(r => r.creator_id === userId)
+    .map(ride => ({ ride, requests: pendingRequests(ride), closesAt: requestDeadline(ride) }))
+    .filter(w => w.requests.length > 0)
+    .sort((a, b) => a.closesAt.getTime() - b.closesAt.getTime())
 }
 
 // ---------- trip phases ----------

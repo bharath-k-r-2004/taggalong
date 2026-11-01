@@ -33,7 +33,12 @@ import {
   fetchMyConfirmedRides,
   fetchRide,
   fetchRideContact,
+  REQUEST_CLOSE_MINUTES,
+  effectiveStatus,
   fetchStudentStats,
+  pendingRequests,
+  requestDeadline,
+  requestsOpen,
   flexibilityLabel,
   formatDateLabel,
   formatRupees,
@@ -186,7 +191,8 @@ export function RideDetailsPage() {
   const left = seatsLeft(ride)
   const onBoard = peopleOnBoard(ride)
   const accepted = (ride.ride_participants || []).filter(p => p.status === 'accepted')
-  const requests = (ride.ride_participants || []).filter(p => p.status === 'requested')
+  const requests = pendingRequests(ride)
+  const mineStatus = effectiveStatus(ride, mine)
   const isMember = isCreator || mine?.status === 'accepted'
   const clash = isCreator ? undefined : myConfirmed.find(c => c.id !== ride.id && ridesClash(c, ride))
   const canSeeContact = Boolean(contact) && isMember
@@ -830,10 +836,8 @@ export function RideDetailsPage() {
             ) : (
               <div className="rounded-xl bg-primary-50 p-4 text-sm text-primary-800">Trip completed. Thanks for travelling together!</div>
             )
-          ) : mine?.status === 'requested' ? (
-            <div className="rounded-xl bg-secondary-100 p-4 text-sm text-secondary-700">
-              The ride left before your request was accepted.
-            </div>
+          ) : mineStatus === 'expired' ? (
+            <div className="rounded-xl bg-secondary-100 p-4 text-sm font-semibold text-secondary-700">Expired</div>
           ) : null
         ) : mine?.status === 'accepted' ? (
           <div className="rounded-xl bg-primary-600 p-4 text-white shadow-md">
@@ -849,17 +853,19 @@ export function RideDetailsPage() {
               </button>
             )}
           </div>
-        ) : mine?.status === 'requested' ? (
+        ) : mineStatus === 'expired' ? (
+          <div className="rounded-xl bg-secondary-100 p-4 text-sm font-semibold text-secondary-700">Expired</div>
+        ) : mineStatus === 'requested' ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
             <p className="font-semibold text-amber-900">Request sent</p>
             <p className="text-sm text-amber-800">
-              Waiting for {ride.creator?.name || 'the poster'} to accept.
+              Waiting for {ride.creator?.name || 'the poster'} to accept. Requests close at {clockTime(requestDeadline(ride))}.
               {!group && " The driver's number appears here once they do."}
             </p>
             <button
               type="button"
               disabled={busy}
-              onClick={() => withdrawRequest(mine)}
+              onClick={() => mine && withdrawRequest(mine)}
               className="mt-2 text-sm font-medium text-amber-900 underline"
             >
               Withdraw request
@@ -962,17 +968,22 @@ export function RideDetailsPage() {
             <div>
               <button
                 type="button"
-                disabled={busy || left === 0}
+                disabled={busy || left === 0 || !requestsOpen(ride)}
                 onClick={() => setJoinOpen(true)}
                 className="w-full rounded-xl bg-primary-600 py-3.5 text-lg font-semibold text-white shadow-md hover:bg-primary-700 disabled:opacity-50"
               >
                 {left === 0
                   ? 'Ride is full'
+                  : !requestsOpen(ride)
+                  ? 'Requests closed'
                   : group
                   ? 'Request to join group'
                   : `Request to join · ${formatRupees(shareIfYouJoin(ride))}`}
               </button>
-              {left > 0 && (
+              {left > 0 && !requestsOpen(ride) && (
+                <p className="mt-1.5 text-center text-xs text-secondary-500">Requests close {REQUEST_CLOSE_MINUTES} minutes before departure.</p>
+              )}
+              {left > 0 && requestsOpen(ride) && (
                 <p className="mt-1.5 text-center text-xs text-secondary-500">
                   Your request goes to {ride.creator?.name?.split(' ')[0] || 'the poster'}. You join only after they accept.
                 </p>

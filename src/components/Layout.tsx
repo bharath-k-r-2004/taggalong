@@ -1,4 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
+import { useWaitingRequests } from '../hooks/useWaitingRequests'
 import { Bus, Home, MapPin, MessageSquare, PlusCircle, Search, User, UserCheck } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -16,6 +17,13 @@ const NAV_ITEMS = [
 
 export function Layout() {
   const location = useLocation()
+  const waiting = useWaitingRequests(location.pathname)
+  const badge = (path: string) =>
+    path === '/trips' && waiting > 0 ? (
+      <span className="absolute -right-3 -top-1.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white" aria-label={`${waiting} requests waiting`}>
+        {waiting}
+      </span>
+    ) : null
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
 
@@ -36,7 +44,10 @@ export function Layout() {
               isActive(path) ? 'text-primary-600' : 'text-secondary-500 hover:text-primary-600'
             }`}
           >
-            <Icon size={22} strokeWidth={isActive(path) ? 2.5 : 2} />
+            <span className="relative">
+              <Icon size={22} strokeWidth={isActive(path) ? 2.5 : 2} />
+              {badge(path)}
+            </span>
             <span className="mt-0.5">{label}</span>
           </Link>
         ))}
@@ -60,6 +71,9 @@ export function Layout() {
             >
               <Icon size={20} className="mr-3" />
               {label === 'Find' ? 'Find a ride' : label === 'Offer' ? 'Post a ride' : label === 'Cabs' ? 'Campus cabs' : label}
+              {path === '/trips' && waiting > 0 && (
+                <span className="ml-auto rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">{waiting} waiting</span>
+              )}
             </Link>
           ))}
         </nav>

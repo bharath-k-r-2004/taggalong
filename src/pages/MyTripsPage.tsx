@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { friendlyError } from '../lib/errors'
 import { RideCard } from '../components/RideCard'
-import { Ride, fetchMyRides, myParticipation, rideDateTime, ridePhase } from '../lib/rides'
+import { Ride, effectiveStatus, fetchMyRides, myParticipation, rideDateTime, ridePhase } from '../lib/rides'
 
 type Tab = 'upcoming' | 'completed' | 'cancelled'
 
@@ -31,7 +31,8 @@ export function MyTripsPage() {
     // expired = left with nobody else on board: only the poster sees it, alongside cancelled trips
     if (r.status === 'expired') return isPoster ? 'cancelled' : null
     // requests that were declined, or closed because another ride accepted me, aren't trips
-    if (mineP?.status === 'declined' || mineP?.status === 'withdrawn') return null
+    const mineStatus = effectiveStatus(r, mineP)
+    if (mineStatus === 'declined' || mineStatus === 'withdrawn' || mineStatus === 'expired') return null
     const onIt = isPoster || mineP?.status === 'accepted'
     const phase = ridePhase(r)
     if (phase === 'upcoming') return 'upcoming'

@@ -13,6 +13,7 @@ import {
   ridePhase,
   peopleOnBoard,
   myParticipation,
+  effectiveStatus,
   pendingRequests,
   seatsLeft,
   shareWhenFull
@@ -48,7 +49,8 @@ export function RideCard({ ride, userId, pickupKm, dropKm, minutesFromWanted, re
       : { text: 'Completed', className: 'bg-secondary-100 text-secondary-700' }
   else if (isMine) badge = { text: 'Your ride', className: 'bg-primary-100 text-primary-700' }
   else if (mine?.status === 'accepted') badge = { text: "You're in", className: 'bg-primary-100 text-primary-700' }
-  else if (mine?.status === 'requested') badge = { text: 'Requested', className: 'bg-amber-100 text-amber-800' }
+  else if (effectiveStatus(ride, mine) === 'requested') badge = { text: 'Requested', className: 'bg-amber-100 text-amber-800' }
+  else if (effectiveStatus(ride, mine) === 'expired') badge = { text: 'Expired', className: 'bg-secondary-100 text-secondary-600' }
   else if (mine?.status === 'declined') badge = { text: 'Declined', className: 'bg-secondary-100 text-secondary-600' }
   else if (mine?.status === 'cancelled') badge = { text: 'You cancelled', className: 'bg-secondary-100 text-secondary-600' }
   else if (mine?.status === 'withdrawn') badge = { text: 'Joined another ride', className: 'bg-secondary-100 text-secondary-600' }

@@ -4,6 +4,7 @@ import { ArrowRight, Car, MessageSquare, Search, UserCheck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { RideCard } from '../components/RideCard'
 import { CampusCabs } from '../components/CampusCabs'
+import { WaitingRequests } from '../components/WaitingRequests'
 import {
   Ride,
   fetchMyRides,
@@ -13,6 +14,7 @@ import {
   needsPosterConfirmation,
   needsRiderConfirmation,
   ridePhase,
+  effectiveStatus,
   seatsLeft
 } from '../lib/rides'
 import { friendlyError } from '../lib/errors'
@@ -50,8 +52,8 @@ export function HomePage() {
   const myNext = rides.find(r => {
     if (ridePhase(r) !== 'upcoming') return false
     if (r.creator_id === user?.id) return true
-    const p = myParticipation(r, user?.id)
-    return p?.status === 'accepted' || p?.status === 'requested'
+    const st = effectiveStatus(r, myParticipation(r, user?.id))
+    return st === 'accepted' || st === 'requested'
   })
 
   // Rides from others that still have seats
@@ -148,6 +150,8 @@ export function HomePage() {
 
       <div className="space-y-6 px-4 py-6">
         {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+        <WaitingRequests rides={myRides} userId={user?.id} />
 
         {onTrip && (
           <section>
