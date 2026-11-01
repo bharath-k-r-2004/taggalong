@@ -40,6 +40,7 @@ export const INTERVAL_OPTIONS = [
   { minutes: 120, label: 'Every 2 hours' },
   { minutes: 180, label: 'Every 3 hours' },
   { minutes: 240, label: 'Every 4 hours' },
+  { minutes: 300, label: 'Every 5 hours' },
   { minutes: 360, label: 'Every 6 hours' },
   { minutes: 720, label: 'Every 12 hours' }
 ]
